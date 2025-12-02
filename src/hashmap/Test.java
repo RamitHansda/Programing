@@ -15,7 +15,7 @@ public class Test {
         System.out.println(sorted);
         String[] arr = str.split(" ");
         System.out.println(arr.length);
-        MyHashMap<String, String> myMap = new MyHashMap<>();
+        MyHashMap<String, String> myMap = new MyHashMap<String, String>();
         myMap.put("USA", "Washington DC");
         myMap.put("Nepal", "Kathmandu");
         myMap.put("India", "New Delhi");

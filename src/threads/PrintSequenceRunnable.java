@@ -12,17 +12,19 @@ public class PrintSequenceRunnable implements Runnable{
 
     @Override
     public void run() {
-        while (number< PRINT_NUMBER_LIMIT){
-            synchronized (lock){
-                while (number %3 !=reminder){
-                    try {
-                        lock.wait();
-                    }catch (InterruptedException ex){
-                        ex.printStackTrace();
-                    }
+        while (true) {
+            synchronized (lock) {
+
+                if (number > PRINT_NUMBER_LIMIT)
+                    return;
+
+                while (number % 3 != reminder) {
+                    try { lock.wait(); } catch (InterruptedException ignored) {}
+                    if (number > PRINT_NUMBER_LIMIT)
+                        return;
                 }
-                System.out.println(Thread.currentThread().getName() + " "+ number);
-                number++;
+
+                System.out.println(Thread.currentThread().getName() + " " + number++);
                 lock.notifyAll();
             }
         }
