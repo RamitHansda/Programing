@@ -1,0 +1,8 @@
+
+t
+java:S1210+"YOverride "equals(Object obj)" to comply with the contract of the "compareTo(T o)" method.(ÿ–˜Âùÿÿÿÿ
+T	java:S899J":Do something with the "boolean" value returned by "offer".(Ö Š°ýÿÿÿÿ
+A
+java:S1181ž"%Catch Exception instead of Throwable.(•”ø¾øÿÿÿÿ
+z
+java:S2142›"^Either re-interrupt this method or rethrow the "InterruptedException" that can be caught here.(øôÔ×ûÿÿÿÿ
