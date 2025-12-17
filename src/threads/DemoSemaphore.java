@@ -24,15 +24,15 @@ class CorrectSemaphoreExample {
 
                     try {
                         semaphore.acquire();
-//                        try {
-//                            throw new RuntimeException("");
-//                        } catch (Exception e) {
-//                            // handle any program logic exception and exit the function
-//                            return;
-//                        } finally {
-//                            System.out.println("Bad thread releasing semahore.");
-//                            semaphore.release();
-//                        }
+                        try {
+                            throw new RuntimeException("");
+                        } catch (Exception e) {
+                            // handle any program logic exception and exit the function
+                            return;
+                        } finally {
+                            System.out.println("Bad thread releasing semahore.");
+                            semaphore.release();
+                        }
 
                     } catch (InterruptedException ie) {
                         // handle thread interruption

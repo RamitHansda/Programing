@@ -1,10 +1,0 @@
-
-t
-java:S2293"YReplace the type specification in this constructor call with the diamond operator ("<>").(Ì±û‚ÿÿÿÿÿ
-S	java:S106"9Replace this use of System.out or System.err by a logger.(³š¾ğùÿÿÿÿ
-N	java:S106"9Replace this use of System.out or System.err by a logger.(¨•ÍË
-S	java:S106"9Replace this use of System.out or System.err by a logger.(¸šñÙüÿÿÿÿ
-N	java:S106 "9Replace this use of System.out or System.err by a logger.(ƒ†§
-N	java:S106""9Replace this use of System.out or System.err by a logger.(Ø©ë
-A
-java:S5960"+Remove this assertion from production code.(•…
