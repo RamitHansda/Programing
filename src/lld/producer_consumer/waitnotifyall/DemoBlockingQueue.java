@@ -1,6 +1,8 @@
 package lld.producer_consumer.waitnotifyall;
 
 import java.util.LinkedList;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class DemoBlockingQueue {
     public static void main(String[] args) {
@@ -10,15 +12,14 @@ public class DemoBlockingQueue {
             public void run() {
                 try {
                     for (int i =1;i<20;i++){
-                        queue.enqueue(new Integer(i));
-                        System.out.println("Enqueued "+ i+ " by "+ Thread.currentThread().getName());
+                        queue.enqueue(Integer.valueOf(i));
                     }
                 } catch (InterruptedException e){
 
                 }
 
             }
-        }, "producer1");
+        }, "producer-1");
 
         Thread thread2 = new Thread(new Runnable() {
             @Override
@@ -26,14 +27,13 @@ public class DemoBlockingQueue {
                 try {
                     for (int i =1;i<20;i++){
                         Integer item = (Integer) queue.dequeue();
-                        System.out.println("Dequeued "+ item+" by "+ Thread.currentThread().getName());
                     }
                 } catch (InterruptedException e){
 
                 }
 
             }
-        }, "consumer1");
+        }, "consumer-1");
 
         Thread thread3 = new Thread(new Runnable() {
             @Override
@@ -41,29 +41,27 @@ public class DemoBlockingQueue {
                 try {
                     for (int i =1;i<20;i++){
                         Integer item = (Integer) queue.dequeue();
-                        System.out.println("Dequeued "+ item+" by "+ Thread.currentThread().getName());
                     }
                 } catch (InterruptedException e){
 
                 }
 
             }
-        }, "consumer2");
+        }, "consumer-2");
 
         thread2.start();
         thread1.start();
         thread3.start();
 
         try {
+            thread1.join();
             thread2.join();
             thread3.join();
         } catch (Exception e){
             System.out.println("");
         }
 
-        LinkedList<Integer> list = new LinkedList<>();
-        list.addFirst(12);
-
+        return;
 
     }
 }

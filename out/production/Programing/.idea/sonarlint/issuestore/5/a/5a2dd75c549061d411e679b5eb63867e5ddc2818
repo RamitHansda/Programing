@@ -1,22 +1,0 @@
-
-b	java:S112"FDefine and throw a dedicated exception instead of using a generic one.(Ã î´8ºè­æ¯3
-W
-java:S1141"5Extract this nested try block into a separate method.(¡»¢üùÿÿÿÿ8ºè­æ¯3
-D
-java:S1604"(Make this anonymous inner class a lambda(±©¬
-8Íú‘®3
-J
-java:S16041"(Make this anonymous inner class a lambda(Üû±‚şÿÿÿÿ8Íú‘®3
-G
-java:S1197"*Move the array designators [] to the type.(‘–µ¥8¢Íú‘®3
-W
-java:S1118":Add a private constructor to hide the implicit public one.(§‘Ş¸8¤Íú‘®3
-8
-java:S3626"Remove this redundant jump.(ûÁİ…8Áè­æ¯3
-€
-java:S2142%"^Either re-interrupt this method or rethrow the "InterruptedException" that can be caught here.(øôÔ×ûÿÿÿÿ8¦Íú‘®3
-Z	java:S106!"9Replace this use of System.out or System.err by a logger.(Á¡¡úÿÿÿÿ8¨Íú‘®3
-Z	java:S1064"9Replace this use of System.out or System.err by a logger.(ê‚Âüÿÿÿÿ8©Íú‘®3
-€
-java:S21427"^Either re-interrupt this method or rethrow the "InterruptedException" that can be caught here.(øôÔ×ûÿÿÿÿ8¨Íú‘®3
-U	java:S106@"9Replace this use of System.out or System.err by a logger.(ŠÇŒ²8Åè­æ¯3

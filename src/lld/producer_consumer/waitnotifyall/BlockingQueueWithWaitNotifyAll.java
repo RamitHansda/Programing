@@ -11,6 +11,8 @@ public class BlockingQueueWithWaitNotifyAll<T> {
     public BlockingQueueWithWaitNotifyAll(int capacity){
         this.array = (T[]) new Object[capacity];
         this.capacity = capacity;
+        this.head = 0;
+        this.tail = 0;
     }
 
     public void enqueue(T item) throws InterruptedException{
@@ -23,6 +25,7 @@ public class BlockingQueueWithWaitNotifyAll<T> {
             tail = (tail+1)%capacity;
             size++;
             lock.notifyAll();
+            System.out.println("Enqueued "+ item + " by "+ Thread.currentThread().getName());
         }
     }
 
@@ -36,6 +39,7 @@ public class BlockingQueueWithWaitNotifyAll<T> {
             head = (head +1)%capacity;
             size--;
             lock.notifyAll();
+            System.out.println("Dequeued "+ item + " by "+ Thread.currentThread().getName());
             return item;
         }
     }

@@ -33,12 +33,8 @@ Q
 !lld/snakeladder/entity/Snake.java,2/f/2f70d2731bbd1ca86d81adaaebe6a1374f464d3c
 R
 "lld/snakeladder/entity/Player.java,9/0/90c2f5d72b94e3714818e1b26c33fd3cadb40e0d
-O
-lld/logger/ConsoleAppender.java,6/e/6ef842e98e551dd5cafa8816a00b5284e429fb72
 K
 lld/logger/AsyncLogger.java,b/7/b754e9020db9579133dcd967cdd03b7c45bd829b
-J
-lld/logger/LoggerDemo.java,0/2/023d186d5883d84d065d0be945214112485c3435
 L
 lld/store/KeyValueStore.java,f/5/f5ef171b4881f00c699526a6281f1abab809f3f6
 Q
@@ -73,8 +69,6 @@ T
 $threads/executors/ExecutorBasic.java,9/8/98a5154765b547bd2add8b7b52dfe2dfc3bd0c9d
 U
 %threads/executors/FutureTaskDemo.java,d/7/d741ec4e6513a7cc64185a9d740b9ef3c414e6f4
-J
-threads/DemoSemaphore.java,5/a/5a2dd75c549061d411e679b5eb63867e5ddc2818
 K
 threads/DemoWaitNotify.java,c/f/cfb0fd8021791db5c2cf773b38fe872bad46460b
 Y

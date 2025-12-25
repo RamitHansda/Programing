@@ -5,30 +5,22 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="d9000ec9-b37c-4f65-a190-d8b1254da077" name="Changes" comment="">
-      <change afterPath="$PROJECT_DIR$/backtracking/LongestAPinBinaryTree.java" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/lld/parking_lot/Address.java" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/lld/parking_lot/Car.java" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/lld/parking_lot/Cash.java" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/lld/parking_lot/Compact.java" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/lld/parking_lot/CreditCard.java" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/lld/parking_lot/Entrance.java" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/lld/parking_lot/Exit.java" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/lld/parking_lot/Handicapped.java" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/lld/parking_lot/Large.java" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/lld/parking_lot/MotorCycle.java" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/lld/parking_lot/ParkingLot.java" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/lld/parking_lot/ParkingRate.java" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/lld/parking_lot/ParkingSpot.java" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/lld/parking_lot/ParkingTicket.java" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/lld/parking_lot/Payment.java" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/lld/parking_lot/PaymentStatus.java" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/lld/parking_lot/Person.java" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/lld/parking_lot/Truck.java" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/lld/parking_lot/Van.java" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/lld/parking_lot/Vehicle.java" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/oop/inheritance/Inheritance.java" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/oop/polymorphism/Polymorphism.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../Coding.iml" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/../out/production/Programing/lld/producer_consumer/waitnotifyall/BlockingQueueWithWaitNotifyAll.class" beforeDir="false" afterPath="$PROJECT_DIR$/../out/production/Programing/lld/producer_consumer/waitnotifyall/BlockingQueueWithWaitNotifyAll.class" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../out/production/Programing/lld/producer_consumer/waitnotifyall/DemoBlockingQueue$1.class" beforeDir="false" afterPath="$PROJECT_DIR$/../out/production/Programing/lld/producer_consumer/waitnotifyall/DemoBlockingQueue$1.class" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../out/production/Programing/lld/producer_consumer/waitnotifyall/DemoBlockingQueue$2.class" beforeDir="false" afterPath="$PROJECT_DIR$/../out/production/Programing/lld/producer_consumer/waitnotifyall/DemoBlockingQueue$2.class" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../out/production/Programing/lld/producer_consumer/waitnotifyall/DemoBlockingQueue$3.class" beforeDir="false" afterPath="$PROJECT_DIR$/../out/production/Programing/lld/producer_consumer/waitnotifyall/DemoBlockingQueue$3.class" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../out/production/Programing/lld/producer_consumer/waitnotifyall/DemoBlockingQueue.class" beforeDir="false" afterPath="$PROJECT_DIR$/../out/production/Programing/lld/producer_consumer/waitnotifyall/DemoBlockingQueue.class" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/sonarlint/issuestore/0/2/023d186d5883d84d065d0be945214112485c3435" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/sonarlint/issuestore/5/a/5a2dd75c549061d411e679b5eb63867e5ddc2818" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/sonarlint/issuestore/6/e/6ef842e98e551dd5cafa8816a00b5284e429fb72" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/sonarlint/issuestore/index.pb" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/sonarlint/issuestore/index.pb" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/sonarlint/securityhotspotstore/0/2/023d186d5883d84d065d0be945214112485c3435" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/sonarlint/securityhotspotstore/5/a/5a2dd75c549061d411e679b5eb63867e5ddc2818" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/sonarlint/securityhotspotstore/6/e/6ef842e98e551dd5cafa8816a00b5284e429fb72" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/sonarlint/securityhotspotstore/index.pb" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/sonarlint/securityhotspotstore/index.pb" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/lld/producer_consumer/waitnotifyall/BlockingQueueWithWaitNotifyAll.java" beforeDir="false" afterPath="$PROJECT_DIR$/lld/producer_consumer/waitnotifyall/BlockingQueueWithWaitNotifyAll.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/lld/producer_consumer/waitnotifyall/DemoBlockingQueue.java" beforeDir="false" afterPath="$PROJECT_DIR$/lld/producer_consumer/waitnotifyall/DemoBlockingQueue.java" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -71,7 +63,6 @@
     &quot;RunOnceActivity.OpenProjectViewOnStart&quot;: &quot;true&quot;,
     &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
     &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
-    &quot;SHARE_PROJECT_CONFIGURATION_FILES&quot;: &quot;true&quot;,
     &quot;WebServerToolWindowFactoryState&quot;: &quot;false&quot;,
     &quot;git-widget-placeholder&quot;: &quot;master&quot;,
     &quot;kotlin-language-version-configured&quot;: &quot;true&quot;,
@@ -80,6 +71,9 @@
     &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
     &quot;node.js.selected.package.tslint&quot;: &quot;(autodetect)&quot;,
     &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
+    &quot;project.structure.last.edited&quot;: &quot;Project&quot;,
+    &quot;project.structure.proportion&quot;: &quot;0.0&quot;,
+    &quot;project.structure.side.proportion&quot;: &quot;0.0&quot;,
     &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;
   }
 }</component>
@@ -94,54 +88,39 @@
       <recent name="lld" />
     </key>
   </component>
-  <component name="RunManager" selected="Application.t">
-    <configuration name="DemoTokenBucket" type="Application" factoryName="Application" temporary="true" nameIsGenerated="true">
-      <option name="MAIN_CLASS_NAME" value="lld.tokenbucketfilter.DemoTokenBucket" />
-      <module name="Programing" />
+  <component name="RunManager" selected="Application.Graph">
+    <configuration name="DemoSemaphore" type="Application" factoryName="Application" temporary="true" nameIsGenerated="true">
+      <option name="ALTERNATIVE_JRE_PATH" value="18" />
+      <option name="ALTERNATIVE_JRE_PATH_ENABLED" value="true" />
       <extension name="coverage">
         <pattern>
-          <option name="PATTERN" value="lld.tokenbucketfilter.*" />
+          <option name="PATTERN" value="threads.*" />
           <option name="ENABLED" value="true" />
         </pattern>
+      </extension>
+      <extension name="software.aws.toolkits.jetbrains.core.execution.JavaAwsConnectionExtension">
+        <option name="credential" />
+        <option name="region" />
+        <option name="useCurrentConnection" value="false" />
       </extension>
       <method v="2">
         <option name="Make" enabled="true" />
       </method>
     </configuration>
-    <configuration name="LRUCacheDemo" type="Application" factoryName="Application" temporary="true" nameIsGenerated="true">
-      <option name="MAIN_CLASS_NAME" value="lld.lrucache.LRUCacheDemo" />
-      <module name="Programing" />
+    <configuration name="Graph" type="Application" factoryName="Application" temporary="true" nameIsGenerated="true">
+      <option name="ALTERNATIVE_JRE_PATH" value="18" />
+      <option name="ALTERNATIVE_JRE_PATH_ENABLED" value="true" />
+      <option name="MAIN_CLASS_NAME" value="dfs.Graph" />
       <extension name="coverage">
         <pattern>
-          <option name="PATTERN" value="lld.lrucache.*" />
+          <option name="PATTERN" value="dfs.*" />
           <option name="ENABLED" value="true" />
         </pattern>
       </extension>
-      <method v="2">
-        <option name="Make" enabled="true" />
-      </method>
-    </configuration>
-    <configuration name="LoggerDemo" type="Application" factoryName="Application" temporary="true" nameIsGenerated="true">
-      <option name="MAIN_CLASS_NAME" value="lld.logger.LoggerDemo" />
-      <module name="Programing" />
-      <extension name="coverage">
-        <pattern>
-          <option name="PATTERN" value="lld.logger.*" />
-          <option name="ENABLED" value="true" />
-        </pattern>
-      </extension>
-      <method v="2">
-        <option name="Make" enabled="true" />
-      </method>
-    </configuration>
-    <configuration name="SnakeAndLadderDemo" type="Application" factoryName="Application" temporary="true" nameIsGenerated="true">
-      <option name="MAIN_CLASS_NAME" value="lld.snakeladder.SnakeAndLadderDemo" />
-      <module name="Programing" />
-      <extension name="coverage">
-        <pattern>
-          <option name="PATTERN" value="lld.snakeladder.facade.*" />
-          <option name="ENABLED" value="true" />
-        </pattern>
+      <extension name="software.aws.toolkits.jetbrains.core.execution.JavaAwsConnectionExtension">
+        <option name="credential" />
+        <option name="region" />
+        <option name="useCurrentConnection" value="false" />
       </extension>
       <method v="2">
         <option name="Make" enabled="true" />
@@ -165,6 +144,30 @@
         <option name="Make" enabled="true" />
       </method>
     </configuration>
+    <configuration name="threads.DemoSemaphore (1)" type="Application" factoryName="Application" temporary="true" nameIsGenerated="true">
+      <option name="MAIN_CLASS_NAME" value="threads.DemoSemaphore" />
+      <extension name="coverage">
+        <pattern>
+          <option name="PATTERN" value="threads.*" />
+          <option name="ENABLED" value="true" />
+        </pattern>
+      </extension>
+      <method v="2">
+        <option name="Make" enabled="true" />
+      </method>
+    </configuration>
+    <configuration name="threads.DemoSemaphore" type="Application" factoryName="Application" temporary="true" nameIsGenerated="true">
+      <option name="MAIN_CLASS_NAME" value="threads.DemoSemaphore" />
+      <extension name="coverage">
+        <pattern>
+          <option name="PATTERN" value="threads.*" />
+          <option name="ENABLED" value="true" />
+        </pattern>
+      </extension>
+      <method v="2">
+        <option name="Make" enabled="true" />
+      </method>
+    </configuration>
     <configuration default="true" type="JetRunConfigurationType">
       <module name="src" />
       <method v="2">
@@ -179,19 +182,19 @@
       </method>
     </configuration>
     <list>
-      <item itemvalue="Application.DemoTokenBucket" />
-      <item itemvalue="Application.LoggerDemo" />
-      <item itemvalue="Application.LRUCacheDemo" />
+      <item itemvalue="Application.Graph" />
+      <item itemvalue="Application.DemoSemaphore" />
+      <item itemvalue="Application.threads.DemoSemaphore" />
+      <item itemvalue="Application.threads.DemoSemaphore (1)" />
       <item itemvalue="Application.t" />
-      <item itemvalue="Application.SnakeAndLadderDemo" />
     </list>
     <recent_temporary>
       <list>
+        <item itemvalue="Application.Graph" />
+        <item itemvalue="Application.threads.DemoSemaphore (1)" />
+        <item itemvalue="Application.threads.DemoSemaphore" />
+        <item itemvalue="Application.DemoSemaphore" />
         <item itemvalue="Application.t" />
-        <item itemvalue="Application.LoggerDemo" />
-        <item itemvalue="Application.LRUCacheDemo" />
-        <item itemvalue="Application.DemoTokenBucket" />
-        <item itemvalue="Application.SnakeAndLadderDemo" />
       </list>
     </recent_temporary>
   </component>
@@ -229,6 +232,12 @@
       <workItem from="1766001546459" duration="22000" />
       <workItem from="1766001572598" duration="23000" />
       <workItem from="1766001642308" duration="207000" />
+      <workItem from="1766001868260" duration="523000" />
+      <workItem from="1766002395751" duration="12000" />
+      <workItem from="1766002411004" duration="192000" />
+      <workItem from="1766002606943" duration="158000" />
+      <workItem from="1766002773300" duration="448000" />
+      <workItem from="1766114180539" duration="20000" />
     </task>
     <servers />
   </component>
