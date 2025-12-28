@@ -72,15 +72,11 @@ public class BlockingQueueWithWaitNotifyAllTest {
         final int numProducers = 3;
         final int numConsumers = 4;
         final int itemsPerProducer = 50;
-        final int totalItems = numProducers * itemsPerProducer;
+        final Integer POISON_PILL = Integer.MIN_VALUE;
 
-        final AtomicInteger producedCount = new AtomicInteger(0);
-        final AtomicInteger consumedCount = new AtomicInteger(0);
         final List<Integer> consumed = Collections.synchronizedList(new ArrayList<>());
-
         final CountDownLatch startLatch = new CountDownLatch(1);
-        final CountDownLatch producersLatch = new CountDownLatch(numProducers);
-        final CountDownLatch consumersLatch = new CountDownLatch(numConsumers);
+        final CountDownLatch allDone = new CountDownLatch(numProducers + numConsumers);
 
         // Create producer threads
         ExecutorService producerExecutor = Executors.newFixedThreadPool(numProducers);
@@ -93,12 +89,11 @@ public class BlockingQueueWithWaitNotifyAllTest {
                     for (int i = 0; i < itemsPerProducer; i++) {
                         int item = producerId * 1000 + i; // Create unique items per producer
                         queue.enqueue(item);
-                        producedCount.incrementAndGet();
                     }
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                 } finally {
-                    producersLatch.countDown();
+                    allDone.countDown();
                 }
             });
         }
@@ -109,28 +104,20 @@ public class BlockingQueueWithWaitNotifyAllTest {
             consumerExecutor.submit(() -> {
                 try {
                     startLatch.await(); // Wait for all threads to be ready
-                    while (true){
-                        if(consumedCount.get() >= totalItems){
-                            break;
-                        }
 
-                        if(producersLatch.getCount() == 0 && consumedCount.get() >= producedCount.get()){
+                    while (true) {
+                        Integer item = queue.dequeue();
+                        if (item.equals(POISON_PILL)) {
+                            // Pass the poison pill along for other consumers
+                            queue.enqueue(POISON_PILL);
                             break;
                         }
-                        try {
-                            // Use a timeout to avoid getting stuck forever
-                            Integer item = queue.dequeue();
-                            consumed.add(item);
-                            consumedCount.incrementAndGet();
-                        } catch (InterruptedException e) {
-                            Thread.currentThread().interrupt();
-                            break;
-                        }
+                        consumed.add(item);
                     }
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                 } finally {
-                    consumersLatch.countDown();
+                    allDone.countDown();
                 }
             });
         }
@@ -139,20 +126,20 @@ public class BlockingQueueWithWaitNotifyAllTest {
         startLatch.countDown();
 
         // Wait for producers to finish
-        assertTrue(producersLatch.await(3, TimeUnit.SECONDS), "Producers timed out");
-
-        // Wait for consumers to finish
-        assertTrue(consumersLatch.await(3, TimeUnit.SECONDS), "Consumers timed out");
-
-        // Shutdown executors
         producerExecutor.shutdown();
+        producerExecutor.awaitTermination(3, TimeUnit.SECONDS);
+
+        // Add a poison pill to signal consumers to stop
+        queue.enqueue(POISON_PILL);
+
+        // Wait for all threads to complete
+        assertTrue(allDone.await(3, TimeUnit.SECONDS), "Test timed out");
         consumerExecutor.shutdown();
 
-        // Verify all items were produced and consumed
-        assertEquals(totalItems, producedCount.get(), "Not all items were produced");
-        assertEquals(totalItems, consumedCount.get(), "Not all items were consumed");
-        assertEquals(totalItems, consumed.size(), "Consumed items list size mismatch");
+        // Verify correct number of items were consumed
+        assertEquals(numProducers * itemsPerProducer, consumed.size(), "Wrong number of items consumed");
     }
+
 
     @Test
     @Timeout(value = 5, unit = TimeUnit.SECONDS)

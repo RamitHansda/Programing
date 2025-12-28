@@ -1,0 +1,11 @@
+
+l
+java:S1192;"ODefine a constant instead of duplicating this literal "Test timed out" 4 times.(— š8·Ã¡›µ3
+c
+java:S2184™"ECast one of the operands of this subtraction operation to a "double".(ğ³‚”8¹Ã¡›µ3
+t
+java:S3776F"RRefactor this method to reduce its Cognitive Complexity from 18 to the 15 allowed.(–Ñ’…ùÿÿÿÿ8µ“´›µ3
+V	java:S106Ÿ"9Replace this use of System.out or System.err by a logger.(é¥ÆÂ8ÖÃ¡›µ3
+U	java:S106 "9Replace this use of System.out or System.err by a logger.(ÅâÊ28ÖÃ¡›µ3
+H
+java:S5960;"+Remove this assertion from production code.(— š8ÖÃ¡›µ3

@@ -1,0 +1,17 @@
+
+`	java:S112E"FDefine and throw a dedicated exception instead of using a generic one.(Ò‚Òéüÿÿÿÿ
+`	java:S112O"FDefine and throw a dedicated exception instead of using a generic one.(Ò‚Òéüÿÿÿÿ
+>
+java:S1604"(Make this anonymous inner class a lambda(¼×¨™
+C
+java:S1604"(Make this anonymous inner class a lambda(ôâ…Æşÿÿÿÿ
+@
+java:S1197"*Move the array designators [] to the type.(‘–µ¥
+y
+java:S21427"^Either re-interrupt this method or rethrow the "InterruptedException" that can be caught here.(øôÔ×ûÿÿÿÿ
+C	java:S1087")Either remove or fill this block of code.(øôÔ×ûÿÿÿÿ
+t
+java:S2142D"^Either re-interrupt this method or rethrow the "InterruptedException" that can be caught here.(ä ¹€
+t
+java:S2142N"^Either re-interrupt this method or rethrow the "InterruptedException" that can be caught here.(ä ¹€
+S	java:S106V"9Replace this use of System.out or System.err by a logger.(ÎÃ¹şÿÿÿÿ

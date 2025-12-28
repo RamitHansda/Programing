@@ -1,0 +1,11 @@
+
+a
+java:S2184"FCast one of the operands of this multiplication operation to a "long".(Ÿà¢Ëþÿÿÿÿ
+@
+java:S1197"*Move the array designators [] to the type.(‘–µ¥
+S	java:S106"9Replace this use of System.out or System.err by a logger.(ÆÖ‡…ûÿÿÿÿ
+N	java:S106"9Replace this use of System.out or System.err by a logger.(òÙ‹È
+y
+java:S2142"^Either re-interrupt this method or rethrow the "InterruptedException" that can be caught here.(øôÔ×ûÿÿÿÿ
+M	java:S106"9Replace this use of System.out or System.err by a logger.(’±¿
+S	java:S106"9Replace this use of System.out or System.err by a logger.(±ÆÀêùÿÿÿÿ

@@ -3,24 +3,39 @@
   <component name="AutoImportSettings">
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
+  <component name="BitbucketMajeraCodeReviewSettings">
+    <option name="popularEmojiShortcuts">
+      <list />
+    </option>
+  </component>
   <component name="ChangeListManager">
     <list default="true" id="d9000ec9-b37c-4f65-a190-d8b1254da077" name="Changes" comment="">
-      <change beforePath="$PROJECT_DIR$/../out/production/Programing/lld/producer_consumer/waitnotifyall/BlockingQueueWithWaitNotifyAll.class" beforeDir="false" afterPath="$PROJECT_DIR$/../out/production/Programing/lld/producer_consumer/waitnotifyall/BlockingQueueWithWaitNotifyAll.class" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../out/production/Programing/lld/producer_consumer/waitnotifyall/DemoBlockingQueue$1.class" beforeDir="false" afterPath="$PROJECT_DIR$/../out/production/Programing/lld/producer_consumer/waitnotifyall/DemoBlockingQueue$1.class" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../out/production/Programing/lld/producer_consumer/waitnotifyall/DemoBlockingQueue$2.class" beforeDir="false" afterPath="$PROJECT_DIR$/../out/production/Programing/lld/producer_consumer/waitnotifyall/DemoBlockingQueue$2.class" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../out/production/Programing/lld/producer_consumer/waitnotifyall/DemoBlockingQueue$3.class" beforeDir="false" afterPath="$PROJECT_DIR$/../out/production/Programing/lld/producer_consumer/waitnotifyall/DemoBlockingQueue$3.class" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../out/production/Programing/lld/producer_consumer/waitnotifyall/DemoBlockingQueue.class" beforeDir="false" afterPath="$PROJECT_DIR$/../out/production/Programing/lld/producer_consumer/waitnotifyall/DemoBlockingQueue.class" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/sonarlint/issuestore/0/2/023d186d5883d84d065d0be945214112485c3435" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/sonarlint/issuestore/5/a/5a2dd75c549061d411e679b5eb63867e5ddc2818" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/sonarlint/issuestore/6/e/6ef842e98e551dd5cafa8816a00b5284e429fb72" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/sonarlint/issuestore/index.pb" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/sonarlint/issuestore/index.pb" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/sonarlint/securityhotspotstore/0/2/023d186d5883d84d065d0be945214112485c3435" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/sonarlint/securityhotspotstore/5/a/5a2dd75c549061d411e679b5eb63867e5ddc2818" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/sonarlint/securityhotspotstore/6/e/6ef842e98e551dd5cafa8816a00b5284e429fb72" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/sonarlint/securityhotspotstore/index.pb" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/sonarlint/securityhotspotstore/index.pb" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/lld/producer_consumer/waitnotifyall/BlockingQueueWithWaitNotifyAll.java" beforeDir="false" afterPath="$PROJECT_DIR$/lld/producer_consumer/waitnotifyall/BlockingQueueWithWaitNotifyAll.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/lld/producer_consumer/waitnotifyall/DemoBlockingQueue.java" beforeDir="false" afterPath="$PROJECT_DIR$/lld/producer_consumer/waitnotifyall/DemoBlockingQueue.java" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/lld/concurrentlogger/ConcurrentAsyncLogger.java" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/lld/concurrentlogger/ConcurrentAsyncLoggerTestSuite.java" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/lld/concurrentlogger/ConcurrentLogger.java" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/lld/counter/ConcurrentCounter.java" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/lld/counter/ConcurrentCounterTest.java" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/lld/hitcounter/HitCounter.java" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/lld/hitcounter/HitCounterTest.java" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/threads/executors/completionService/CompletionSerivceDemo.java" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/threads/executors/threadpoolexecutor/ThreadPoolExecutorDemo.java" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/threads/timer/TimerDemo.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../out/production/Programing/lld/producer_consumer/waitnotifyall/BlockingQueueWithWaitNotifyAllTest.class" beforeDir="false" afterPath="$PROJECT_DIR$/../out/production/Programing/lld/producer_consumer/waitnotifyall/BlockingQueueWithWaitNotifyAllTest.class" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../out/production/Programing/threads/CyclicBerrierDemo$1.class" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/../out/production/Programing/threads/CyclicBerrierDemo.class" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/../out/production/Programing/threads/Task.class" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/../out/production/Programing/threads/executors/CompletionServiceDemo$1TrivialTask.class" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/../out/production/Programing/threads/executors/CompletionServiceDemo.class" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/../out/production/Programing/threads/executors/CountDownLatchDemo.class" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/../out/production/Programing/threads/executors/FutureInterfaceDemo$1.class" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/../out/production/Programing/threads/executors/FutureInterfaceDemo.class" beforeDir="false" afterPath="$PROJECT_DIR$/../out/production/Programing/threads/executors/FutureInterfaceDemo.class" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../out/production/Programing/threads/executors/Master.class" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/../out/production/Programing/threads/executors/Worker.class" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/lld/producer_consumer/waitnotifyall/BlockingQueueWithWaitNotifyAllTest.java" beforeDir="false" afterPath="$PROJECT_DIR$/lld/producer_consumer/waitnotifyall/BlockingQueueWithWaitNotifyAllTest.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/threads/CyclicBerrierDemo.java" beforeDir="false" afterPath="$PROJECT_DIR$/threads/executors/cyclicBerrier/CyclicBerrierDemo.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/threads/executors/CompletionServiceDemo.java" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/threads/executors/CountDownLatchDemo.java" beforeDir="false" afterPath="$PROJECT_DIR$/threads/executors/countdownlatch/CountDownLatchDemo.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/threads/executors/FutureInterfaceDemo.java" beforeDir="false" afterPath="$PROJECT_DIR$/threads/executors/FutureInterfaceDemo.java" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -238,6 +253,7 @@
       <workItem from="1766002606943" duration="158000" />
       <workItem from="1766002773300" duration="448000" />
       <workItem from="1766114180539" duration="20000" />
+      <workItem from="1766568739948" duration="599000" />
     </task>
     <servers />
   </component>

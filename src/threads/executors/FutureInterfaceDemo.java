@@ -19,17 +19,29 @@ class FutureInterfaceDemo {
 
     static int findSum(final int n) throws ExecutionException, InterruptedException {
 
-        Callable<Integer> sumTask = new Callable<Integer>() {
-
-            public Integer call() throws Exception {
-                int sum = 0;
-                for (int i = 1; i <= n; i++)
-                    sum += i;
-                return sum;
-            }
+//        Callable<Integer> sumTask = new Callable<Integer>() {
+//
+//            public Integer call() throws Exception {
+//                int sum = 0;
+//                for (int i = 1; i <= n; i++)
+//                    sum += i;
+//                return sum;
+//            }
+//        };
+        Callable<Integer> sumTask = ()->{
+            int sum = 0;
+            for (int i = 1; i <= n; i++)
+                sum += i;
+            return sum;
         };
 
+        Runnable mulTask = ()->{
+            System.out.println("tan da "+ n);
+        };
+        threadPool.submit(mulTask);
         Future<Integer> f = threadPool.submit(sumTask);
+
+        threadPool.shutdown();
         return f.get();
     }
 
