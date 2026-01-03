@@ -1,0 +1,16 @@
+
+a	java:S112"FDefine and throw a dedicated exception instead of using a generic one.(ñú÷8™¬õ‚®3
+J
+java:S16041"(Make this anonymous inner class a lambda(Ó¸ÛÔùÿÿÿÿ8š¬õ‚®3
+J
+java:S16047"(Make this anonymous inner class a lambda(Ô™ˆîÿÿÿÿÿ8š¬õ‚®3
+h
+java:S2184*"FCast one of the operands of this multiplication operation to a "long".(»ÚÆ§ûÿÿÿÿ8š¬õ‚®3
+L
+java:S1197"*Move the array designators [] to the type.(ùï¾Žÿÿÿÿÿ8 ¬õ‚®3
+Z	java:S106"9Replace this use of System.out or System.err by a logger.(‚òô—ùÿÿÿÿ8¡¬õ‚®3
+Z	java:S1064"9Replace this use of System.out or System.err by a logger.(þË§±ýÿÿÿÿ8¤¬õ‚®3
+U	java:S106:"9Replace this use of System.out or System.err by a logger.(žü”­8¤¬õ‚®3
+Z	java:S106H"9Replace this use of System.out or System.err by a logger.(ŒåÄÖúÿÿÿÿ8¤¬õ‚®3
+U	java:S106L"9Replace this use of System.out or System.err by a logger.(Œ›ñ 8¥¬õ‚®3
+Z	java:S106O"9Replace this use of System.out or System.err by a logger.(œšÈìùÿÿÿÿ8¥¬õ‚®3
