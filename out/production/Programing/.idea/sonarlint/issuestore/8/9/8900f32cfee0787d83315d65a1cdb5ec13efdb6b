@@ -1,36 +1,0 @@
-
-v
-java:S2293"YReplace the type specification in this constructor call with the diamond operator ("<>").(Íòš„8éÙÃ“®3
-D
-java:S1604"(Make this anonymous inner class a lambda(£·®8êÙÃ“®3
-J
-java:S1604"(Make this anonymous inner class a lambda(ôÆĞÆüÿÿÿÿ8êÙÃ“®3
-E
-java:S1604$"(Make this anonymous inner class a lambda(ÿïŞß8êÙÃ“®3
-J
-java:S16041"(Make this anonymous inner class a lambda(ûè¿°şÿÿÿÿ8ÿœ§Á®3
-o
-java:S3776"RRefactor this method to reduce its Cognitive Complexity from 16 to the 15 allowed.(‘–µ¥8ˆ§Á®3
-G
-java:S1197"*Move the array designators [] to the type.(‘–µ¥8ğÙÃ“®3
-€
-java:S2142"^Either re-interrupt this method or rethrow the "InterruptedException" that can be caught here.(øôÔ×ûÿÿÿÿ8òÙÃ“®3
->
-java:S2129"!Remove this "Integer" constructor(ºÛ†Å8òÙÃ“®3
-U	java:S106"9Replace this use of System.out or System.err by a logger.(¤¸âû8òÙÃ“®3
-J	java:S108")Either remove or fill this block of code.(øôÔ×ûÿÿÿÿ8òÙÃ“®3
-€
-java:S2142"^Either re-interrupt this method or rethrow the "InterruptedException" that can be caught here.(øôÔ×ûÿÿÿÿ8óÙÃ“®3
->
-java:S2129"!Remove this "Integer" constructor(ºÛ†Å8§Á®3
-Z	java:S106"9Replace this use of System.out or System.err by a logger.(ÀĞË¾øÿÿÿÿ8óÙÃ“®3
-J	java:S108")Either remove or fill this block of code.(øôÔ×ûÿÿÿÿ8óÙÃ“®3
-€
-java:S2142+"^Either re-interrupt this method or rethrow the "InterruptedException" that can be caught here.(øôÔ×ûÿÿÿÿ8óÙÃ“®3
-Z	java:S106)"9Replace this use of System.out or System.err by a logger.(óÂœéÿÿÿÿÿ8óÙÃ“®3
-J	java:S108+")Either remove or fill this block of code.(øôÔ×ûÿÿÿÿ8óÙÃ“®3
-€
-java:S21428"^Either re-interrupt this method or rethrow the "InterruptedException" that can be caught here.(øôÔ×ûÿÿÿÿ8§Á®3
-U	java:S1066"9Replace this use of System.out or System.err by a logger.(È¡²å8§Á®3
-J	java:S1088")Either remove or fill this block of code.(øôÔ×ûÿÿÿÿ8§Á®3
-]	java:S125@"<This block of commented-out lines of code should be removed.(ÕÉµÕüÿÿÿÿ8¿é£Á®3

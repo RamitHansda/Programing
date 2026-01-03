@@ -9,7 +9,7 @@ class DemoWaitNotify {
 
 class IncorrectSynchronization {
 
-    Boolean flag = new Boolean(true);
+    Boolean flag = true;
 
     public void example() throws InterruptedException {
 

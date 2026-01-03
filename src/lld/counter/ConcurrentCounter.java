@@ -4,7 +4,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.LongAdder;
 
 public class ConcurrentCounter {
-//    private AtomicInteger counter = new AtomicInteger(0);
+ private AtomicInteger counter1 = new AtomicInteger(0);
 //
 //    public int get(){
 //        return counter.get();
