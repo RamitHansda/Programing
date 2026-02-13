@@ -10,7 +10,7 @@ class BlockingQueueSemaphoreDemo {
             public void run() {
                 try {
                     for (int i = 0; i < 20; i++) {
-                        q.enqueue(new Integer(i));
+                        q.enqueue(i);
                         System.out.println("Thread 1 enqueued: " + i);
                     }
                 } catch (InterruptedException ie) {
@@ -24,7 +24,7 @@ class BlockingQueueSemaphoreDemo {
             public void run() {
                 try {
                     for (int i = 30; i < 40; i++) {
-                        q.enqueue(new Integer(i));
+                        q.enqueue(i);
                         System.out.println("Thread 4 enqueued: " + i);
                     }
                 } catch (InterruptedException ie) {
