@@ -4,7 +4,8 @@ High-level design for a telemetry pipeline that ingests **10 million network flo
 
 ## Contents
 
-- **[HLD.md](./HLD.md)** — Full high-level design: scale, architecture, components, trade-offs, failure modes, security, capacity sketch, and phased rollout.
+- **[HLD.md](./HLD.md)** — Full high-level design: scale, architecture, components, trade-offs, failure modes, security, capacity sketch, and phased rollout. Includes **§13 AWS-Native Architecture**.
+- **[AWS_ARCHITECTURE.md](./AWS_ARCHITECTURE.md)** — AWS-only view: service mapping, Kinesis sizing, diagram, security, observability, and cost levers.
 
 ## Key ideas
 

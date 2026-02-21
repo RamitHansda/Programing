@@ -233,4 +233,30 @@ Numbers are starting points; measure and iterate. Right-size from actual traffic
 
 ---
 
+## 13. AWS-Native Architecture
+
+Yes — the same design maps cleanly onto AWS. Use managed services for the log and stream processing so you don't run Kafka/Flink yourself at this scale.
+
+| Logical component | AWS service | Notes |
+|-------------------|-------------|--------|
+| **Ingest (LB)** | NLB (Network Load Balancer) or ALB | NLB for UDP/TCP flow protocols (NetFlow/sFlow); ALB if ingest is HTTP/gRPC. |
+| **Ingest (collectors)** | ECS Fargate or EC2 (ASG) | Stateless containers/instances; scale on CPU or custom metric (flows/sec). Put in private subnets, NLB in front. |
+| **Message bus** | **Amazon Kinesis Data Streams** or **Amazon MSK** | Kinesis: 1k shards ≈ 1 MB/s write per stream; 10M × 100 bytes ≈ 1 GB/s ⇒ use **Kinesis On-Demand** or many shards. MSK if you need Kafka API. |
+| **Stream processing** | **Kinesis Data Analytics for Apache Flink** or **MSK + Flink on EMR** | Managed Flink reads from Kinesis or MSK; writes to Timestream, OpenSearch, S3. Lambda only for light aggregation. |
+| **Hot storage (time-series)** | **Amazon Timestream** | Metrics, TTL, SQL. For aggregated flow metrics. |
+| **Hot storage (analytics/search)** | **Amazon OpenSearch Service** or **Amazon Redshift** | OpenSearch for search; Redshift for heavy SQL analytics. |
+| **Cold / data lake** | **S3** + **Amazon Athena** (+ **AWS Glue**) | Parquet to S3; Athena for SQL; Glue for catalog. |
+| **Query API** | **API Gateway** + **Lambda** | Lambda routes by time range to Timestream, OpenSearch, or Athena. |
+| **Auth / RBAC** | **Cognito** + IAM, **API Gateway authorizers** | Users and service identity. |
+| **Observability** | **CloudWatch**, **X-Ray** | Metrics, logs, alarms; trace query path. |
+| **Secrets / config** | **Secrets Manager**, **Parameter Store** | API keys, credentials. |
+
+**Recommended spine:** **Kinesis Data Streams** (or MSK) → **Kinesis Data Analytics for Flink** → **Timestream** (hot) + **S3** (cold) + optional **OpenSearch**. Ingest: **NLB + ECS Fargate** (or EC2) → Kinesis with partition key.
+
+**AWS notes:** Kinesis per-shard 1 MB/s — use On-Demand or many shards for 1 GB/s. **VPC Flow Logs** can feed S3/CloudWatch; use Firehose or Lambda to push into the same Kinesis stream for a unified pipeline. All listed services are multi-AZ.
+
+See **[AWS_ARCHITECTURE.md](./AWS_ARCHITECTURE.md)** for the full AWS diagram, Kinesis sizing, and cost levers.
+
+---
+
 **Summary:** 10M flows/sec is a throughput problem, not a “one big database” problem. Use a durable, partitioned log as the spine; stateless ingest in front; stream processing to aggregate and fan out; hot storage for recent queries and cold lake for retention. Design for backpressure, observability, and cost from day one, and you’ll have a system that can scale and operate in production.
