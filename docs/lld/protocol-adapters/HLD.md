@@ -51,19 +51,19 @@
 ## 4. High-Level Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────────────────┐
+┌───────────────────────────────────────────────────────────────────────────────────────────┐
 │                           PROTOCOL ADAPTER LAYER (this HLD)                               │
-│                                                                                          │
-│   ┌─────────────┐   ┌─────────────┐   ┌─────────────┐   ┌─────────────┐                  │
-│   │   NetFlow   │   │   sFlow     │   │  REST/JSON  │   │   gRPC      │   ← Protocols    │
-│   │   (UDP)     │   │   (UDP)     │   │  (HTTP)     │   │   (HTTP/2)  │                  │
-│   └──────┬──────┘   └──────┬──────┘   └──────┬──────┘   └──────┬──────┘                  │
+│                                                                                           │
+│   ┌─────────────┐   ┌─────────────┐   ┌─────────────┐   ┌─────────────┐                   │
+│   │   NetFlow   │   │   sFlow     │   │  REST/JSON  │   │   gRPC      │   ← Protocols     │
+│   │   (UDP)     │   │   (UDP)     │   │  (HTTP)     │   │   (HTTP/2)  │                   │
+│   └──────┬──────┘   └──────┬──────┘   └──────┬──────┘   └──────┬──────┘                   │
 │          │                 │                 │                 │                          │
 │          ▼                 ▼                 ▼                 ▼                          │
-│   ┌─────────────┐   ┌─────────────┐   ┌─────────────┐   ┌─────────────┐                  │
+│   ┌─────────────┐   ┌─────────────┐   ┌─────────────┐   ┌─────────────┐                   │
 │   │  NetFlow    │   │   sFlow     │   │   REST      │   │   gRPC      │   ← Adapters      │
 │   │  Adapter    │   │   Adapter   │   │   Adapter   │   │   Adapter   │   (parse + map)   │
-│   └──────┬──────┘   └──────┬──────┘   └──────┬──────┘   └──────┬──────┘                  │
+│   └──────┬──────┘   └──────┬──────┘   └──────┬──────┘   └──────┬──────┘                   │
 │          │                 │                 │                 │                          │
 │          └─────────────────┴────────┬────────┴─────────────────┘                          │
 │                                     │                                                     │
@@ -81,8 +81,8 @@
                                        │
                           ┌────────────▼────────────┐
                           │   Message bus (Kafka)   │   Partition key = e.g. hash(device_id)
-                          │   Topic: flow-events   │   Serialization: Avro / Protobuf
-                          └───────────────────────┘
+                          │   Topic: flow-events    │   Serialization: Avro / Protobuf
+                          └─────────────────────────┘
 ```
 
 **Design principle:** Many protocols in, one schema out. All adapters produce the same canonical type; the bus and downstream are protocol-agnostic.

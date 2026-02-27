@@ -61,26 +61,26 @@ The **matching engine**:
 ## 3. High-Level Architecture
 
 ```
-                    ┌─────────────────────────────────────────────────────────────────┐
+                    ┌───────────────────────────────────────────────────────────────────┐
                     │                         ORDER GATEWAY                             │
-                    │   Validate, enrich, assign order ID / timestamp                    │
-                    └───────────────────────────┬─────────────────────────────────────┘
+                    │   Validate, enrich, assign order ID / timestamp                   │
+                    └───────────────────────────┬───────────────────────────────────────┘
                                                 │
-                    ┌───────────────────────────▼─────────────────────────────────────┐
+                    ┌───────────────────────────▼───────────────────────────────────────┐
                     │                      MATCHING ENGINE                              │
                     │   Single-threaded (per symbol) or lock-protected critical section │
                     │   • Match incoming vs book                                        │
-                    │   • Emit trades + book events                                      │
-                    └───────────────────────────┬─────────────────────────────────────┘
+                    │   • Emit trades + book events                                     │
+                    └───────────────────────────┬───────────────────────────────────────┘
                                                 │
          ┌──────────────────────────────────────┼──────────────────────────────────────┐
          │                                      │                                      │
          ▼                                      ▼                                      ▼
-┌─────────────────┐                 ┌─────────────────────┐                 ┌─────────────────┐
-│  ORDER BOOK     │                 │  TRADE / FILL        │                 │  BOOK / DEPTH   │
-│  (in-memory     │                 │  OUTPUT              │                 │  OUTPUT         │
-│   bid + ask)    │                 │  (Fills, executions) │                 │  (L2/L3 updates) │
-└─────────────────┘                 └─────────────────────┘                 └─────────────────┘
+┌─────────────────┐                 ┌──────────────────────┐                 ┌───────────────────┐
+│  ORDER BOOK     │                 │  TRADE / FILL        │                 │  BOOK / DEPTH     │
+│  (in-memory     │                 │  OUTPUT              │                 │  OUTPUT           │
+│   bid + ask)    │                 │  (Fills, executions) │                 │  (L2/L3 updates)  │
+└─────────────────┘                 └──────────────────────┘                 └───────────────────┘
 ```
 
 **Order book** is the in-memory structure holding bids and asks. The **matching engine** is the logic that runs on each incoming order and updates the book + produces outputs.
@@ -113,14 +113,14 @@ For **cancel** and **amend**, you need to find an order by ID:
 
 ```
                     ORDER BOOK (one symbol)
-    ┌─────────────────────────────────────────────────────────┐
+    ┌──────────────────────────────────────────────────────────┐
     │  BID SIDE (buy)              │  ASK SIDE (sell)          │
     │  Price DESC → best first     │  Price ASC → best first   │
     │  ─────────────────────────   │  ─────────────────────────│
     │  100.00 → [order1, order2]   │  100.50 → [order5]        │
     │   99.50 → [order3]           │  101.00 → [order6, order7]│
     │   99.00 → [order4]           │  ...                      │
-    └─────────────────────────────────────────────────────────┘
+    └──────────────────────────────────────────────────────────┘
                     │
                     │  Matching: buy @ 100.50 crosses with ask 100.50 (FIFO)
                     ▼
@@ -180,14 +180,14 @@ For **cancel** and **amend**, you need to find an order by ID:
 │  Order              │     │  OrderBook          │     │  MatchingEngine     │
 │  orderId, side,     │     │  bids: TreeMap      │     │  match(Order)       │
 │  price, qty, time   │     │  asks: TreeMap      │     │  → List<Trade>      │
-└──────────┬──────────┘     │  orderById: Map    │     │  → BookEvents       │
+└──────────┬──────────┘     │  orderById: Map     │     │  → BookEvents       │
            │                └──────────┬──────────┘     └──────────┬──────────┘
-           │                          │                           │
+           │                           │                           │
            │                ┌──────────▼──────────┐                │
            └───────────────►  PriceLevel          │◄───────────────┘
                             │  price, orders:     │
                             │  Queue<Order> (FIFO)│
-                            └────────────────────┘
+                            └─────────────────────┘
 ```
 
 - **Order:** Immutable or versioned; has remaining (leaves) quantity.
