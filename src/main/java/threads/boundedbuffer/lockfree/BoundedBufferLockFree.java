@@ -61,4 +61,14 @@ public class BoundedBufferLockFree<T> {
             }
         }
     }
+
+    /** Current number of elements (approximate under concurrency). */
+    public int size() {
+        return Math.max(0, Math.min(capacity, tail.get() - head.get()));
+    }
+
+    /** Maximum capacity of the buffer. */
+    public int getCapacity() {
+        return capacity;
+    }
 }

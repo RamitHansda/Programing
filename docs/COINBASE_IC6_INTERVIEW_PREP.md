@@ -4,6 +4,42 @@ Prepared from research on Coinbase’s process, IC6 expectations, and reported i
 
 ---
 
+## Staff Engineer (IC6): What to Mention & What to Maintain
+
+### What to **Mention** (in interviews and in your narrative)
+
+As Staff, they expect you to show **scope beyond code** and **ownership of outcomes**. Have 1–2 concrete stories ready.
+
+| Area | What to mention |
+|------|------------------|
+| **Scope & impact** | Projects that spanned multiple teams or systems; “I owned the outcome for X, which affected Y and Z.” |
+| **Ambiguity** | Times you had unclear requirements or conflicting priorities; how you clarified, got alignment, and drove a decision. |
+| **Tech decisions** | Non-trivial choices (e.g. consistency vs latency, build vs buy); trade-offs considered and why you chose what you did. |
+| **Cross-team** | Aligning with product, security, compliance, or other eng teams; unblocking others. |
+| **Mentoring & leveling** | Helping others grow (design review, pairing, docs); raising the bar for the team. |
+| **Operational ownership** | On-call, incidents, postmortems; improving reliability, monitoring, or runbooks. |
+| **Standards & quality** | Introducing or maintaining patterns, docs, or practices that others follow. |
+
+**In the room:** When answering design or coding questions, briefly tie your approach to “in production I’d also…” (monitoring, rollout, rollback, docs)—that signals Staff-level thinking.
+
+### What to **Maintain** (in the role)
+
+Staff engineers are expected to **maintain** these, not only do them once:
+
+| Maintain | Why it matters at Staff |
+|----------|-------------------------|
+| **Technical standards** | Code review bar, naming, testing, and design patterns so the codebase stays consistent and reviewable. |
+| **Documentation** | ADRs, runbooks, architecture diagrams, and “how we do X” so the team and new hires can operate without you. |
+| **System health & observability** | Meaningful metrics, SLOs, alerts, and dashboards; you notice when something is degrading. |
+| **Incident readiness** | Runbooks, playbooks, and blameless postmortems; you improve reliability over time. |
+| **Clarity of direction** | Roadmap alignment, tech debt visibility, and “what we’re not doing and why.” |
+| **Talent and culture** | Hiring bar, feedback, and psychological safety so the team can do its best work. |
+| **Stakeholder trust** | Realistic commitments, clear communication, and follow-through so product/leadership can depend on eng. |
+
+**One-liner:** As Staff you **mention** scope, impact, ambiguity, and ownership in your stories; you **maintain** standards, docs, system health, and team effectiveness so the org can scale.
+
+---
+
 ## Part 1: Tech Execution Round (IC6)
 
 ### What This Round Is
@@ -168,6 +204,76 @@ Use these as **practice prompts**. For each, run through the structure above and
 - **Say “I don’t know” when you don’t:** Propose how you’d find out (RFC, spike, ask security team). Honesty > confident wrongness.
 - **One deep example:** “For the database I’d lean toward PostgreSQL because of ACID and audit needs; I’ve used it for similar financial workloads…”
 - **Always tie back to:** Security, auditability, and recovery.
+
+---
+
+## Recently Reported Questions (2024–2026)
+
+*Compiled from 1Point3Acres, Glassdoor, Blind, Final Round AI, CodingInterview.com, Lodely, and interview prep guides. Use for domain + system design + coding prep; exact wording and round vary by team.*
+
+### Domain / System Design (recently reported)
+
+| Question / topic | Source / period | Notes |
+|------------------|-----------------|--------|
+| **Cryptocurrency exchange order book** | Recurring | Matching, atomic balance updates, consistency, recovery. |
+| **Design a Crypto Exchange Order Flow System** | 1P3A Oct–Dec 2025 | End-to-end order flow, APIs, matching, persistence. |
+| **Crypto Order System** | 1P3A Oct–Dec 2025 | Order lifecycle, validation, state. |
+| **Crypto Order Event Processing** | 1P3A Oct–Dec 2025 | Event-driven order handling, ordering, idempotency. |
+| **Design Coinbase Explore Realtime Market Data** | 1P3A Oct–Dec 2025 | Real-time prices, aggregation, websockets, caching. |
+| **Blockchain transaction indexing service** | Recurring | Multi-chain ingest, query, fault isolation, backfill. |
+| **Crypto custody system** | Recurring | Keys, HSM, cold/hot, multi-sig, audit. |
+| **Design a Credit Approval Risk Engine** | 1P3A Oct–Dec 2025 | Risk scoring, rules, compliance, auditability. |
+| **Global price aggregation service** | Recurring | Multi-exchange feeds, dedup, staleness, regional latency. |
+| **Fraud detection and risk analysis** | Recurring | Real-time patterns, feature store, ML serving. |
+| **Secure API gateway for financial transactions** | Recurring | Auth, rate limit, signing, tenant isolation. |
+| **How long to send a signal from one computer to all others?** | Final Round AI (Coinbase) | Network topology, bandwidth, latency; estimation + assumptions. |
+| **Cloud File System** | 1P3A Oct–Dec 2025 | Storage, consistency, metadata, scale. |
+| **Task Management System** | 1P3A Oct–Dec 2025, 2026 OA | Tasks, state, concurrency; sometimes in OA. |
+| **Bank System** | 1P3A Oct–Dec 2025 | Balances, transactions, consistency, audit. |
+| **Query Pagination** | 1P3A Oct–Dec 2025 | Large lists, cursor/keyset, consistency (align with your pagination doc). |
+| **In-Memory Database** | 1P3A Oct–Dec 2025 | Fast reads/writes, durability, recovery. |
+| **NFT Feature Generation** | 1P3A Oct–Dec 2025 | Domain-specific feature pipeline. |
+| **Food Delivery System** | 1P3A Oct–Dec 2025 | General LLD; orders, matching, status. |
+| **Recipe Manager** | 1P3A Oct–Dec 2025 | CRUD, search, scale. |
+
+### Tech Execution / Pair Programming (recently reported)
+
+| Question / topic | Source / period | Notes |
+|------------------|-----------------|--------|
+| **Find duplicate in 1..n-1 list** | Coinbase blog (official example) | Exactly one duplicate; they care about clarity, tests, structure. |
+| **Validate blockchain transaction integrity** | CodingInterview, recurring | Chain of records with `hash`/`prev_hash`; verify linkage. |
+| **Detect double spending in a ledger** | Recurring | Ledger of (user, amount, +/−); detect negative balance. |
+| **API rate limiter** | Recurring | N requests per user per second; sliding vs fixed window. |
+| **Max profit one buy/sell (price array)** | Recurring / OA 2025 | Classic greedy; clean code + correctness. |
+| **Fraud-style: withdrawals in 1 min exceeding $X** | Recurring | Sliding window + per-user aggregation. |
+| **Validate chain of records** | Your existing prep | `id`, `prev_id`; cycles, missing links, empty. |
+| **Secure password hashing (salted)** | CodingInterview | Storage, salt, hash; security-aware coding. |
+| **Block Mining (problem details)** | 1P3A 2026 | Mining/consensus-flavored; clarify problem statement. |
+| **Mining Block** | 1P3A Oct–Dec 2025 | Similar theme. |
+| **Interleave Iterator** | 1P3A Oct–Dec 2025 | Iterator pattern, multiple sequences. |
+| **Log File Parser** | 1P3A Oct–Dec 2025 | Parsing, structure, edge cases. |
+
+### Online Assessment (OA) question types (2025)
+
+*Often 2–3 problems in ~90 min (HackerRank/CodeSignal).*
+
+| Type | Example / LeetCode-style |
+|------|---------------------------|
+| Sliding window / array | Most profitable window (buy/sell once), longest substring with at most K distinct |
+| Stack / string | Balanced parentheses, **with wildcards** (valid parenthesis string) |
+| Graph | Detect cycle (e.g. course schedule), shortest path with edge failures (Dijkstra) |
+| Heap / merge | Merge K sorted arrays (or lists) |
+| DP | Buy/sell stock with K transactions |
+| Math / modular | Power of large numbers, modular exponentiation, Sherlock and permutations |
+| Iterator | Iterator pattern, skip iterator |
+| Search / partition | Median of two sorted arrays, k-th element |
+
+### IC6 domain round: what they're really testing
+
+- **Trade-offs:** Consistency vs availability, SQL vs NoSQL, security vs latency.
+- **Compliance & risk:** Auditability, encryption, secure logging, KYC/AML as constraints.
+- **Operational readiness:** Monitoring, alerting, failover, recovery, rollback.
+- **Domain awareness:** Order books, custody, indexing, price feeds, fraud—without requiring deep crypto; show willingness to learn and reason from first principles.
 
 ---
 
