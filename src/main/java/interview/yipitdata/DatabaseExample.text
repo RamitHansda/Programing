@@ -1,0 +1,26 @@
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+
+public class DatabaseExample {
+    public static void main(String[] args) {
+        // Using the connection pool
+        try (Connection conn = DatabaseConnectionPool.getConnection();
+             PreparedStatement stmt = conn.prepareStatement("SELECT * FROM users WHERE id = ?")) {
+            
+            stmt.setInt(1, 1);
+            ResultSet rs = stmt.executeQuery();
+            
+            while (rs.next()) {
+                System.out.println("User: " + rs.getString("name"));
+            }
+            
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        
+        // When application is shutting down
+        // DatabaseConnectionPool.closePool();
+    }
+}
