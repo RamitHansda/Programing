@@ -64,13 +64,21 @@
 
 **"Tell me about a time you raised the bar on your team's technical capability."**
 
-**S:** When I joined Skydo, engineers were strong at shipping features but there was no shared vocabulary around distributed systems reliability. The same classes of problems — race conditions, retry storms, inconsistent state — were being solved ad-hoc per service.
+**S:** I joined Skydo as the **first engineer** under a Head of Engineering who I had previously worked with at Moneyview. The company had no engineering team, no hiring process, and no technical culture beyond the two of us. As the team grew and I took on the Engineering Manager role, I became the one defining the hiring bar and owning engineer development end-to-end — for a team that eventually scaled to 12.
 
-**T:** Define standards and lift the overall technical floor — not by doing it for the team, but by building it into how they work.
+**T:** Define and enforce a hiring bar from near-scratch, and systematically raise the technical capability of every engineer we brought in — especially around distributed systems reliability, which is non-negotiable in FinTech.
 
-**A:** Ran internal design review sessions focused on distributed systems patterns: idempotency, distributed locking, saga orchestration, circuit breaking. Created reference architecture documents for each pattern. Made architectural review mandatory for new services. Mentored engineers through their first implementations against these standards. Also drove GenAI adoption — defined standards for AI coding assistants (Claude, Cursor, Windsurf) that improved iteration speed without sacrificing code quality.
+**A:**
+- **Hiring:** Collaborated with the Head of Engineering initially, then took full ownership of the hiring process as EM. I designed interview scenarios around real FinTech problems — "how do you ensure a transaction is processed exactly once?" — hiring for slope over current altitude. I passed on candidates with strong résumés who couldn't reason through failure modes. Over 3 years, grew the team from 2 to 12.
+- **Developing:** Engineers I hired were strong at shipping features but had limited exposure to production-grade distributed systems. I ran recurring internal design review sessions: idempotency, distributed locking, saga orchestration, circuit breaking. Created reference architecture documents and made design review mandatory for new services.
+- **Mentored 8 engineers directly** — pairing on design, reviewing architecture, giving explicit feedback on reasoning quality, not just code.
+- **GenAI standards:** Defined org-wide standards for AI coding assistants (Claude, Cursor, Windsurf) — not just "use AI," but how to validate AI-generated code in financial systems where correctness is critical.
 
-**R:** Production incident rate dropped **~30% year-over-year**. Two engineers took full module ownership independently — one was promoted. The team became self-sufficient on distributed systems decisions, freeing me to focus on strategy rather than being a technical bottleneck.
+**R:** Production incident rate dropped **~30% year-over-year**. Two engineers I hired and mentored took full module ownership independently — one was promoted. The team became self-sufficient on distributed systems decisions, which freed me to operate at the strategy level rather than being a technical bottleneck on every design.
+
+**Follow-up:** *"What was your relationship with the Head of Engineering?"* → He was my manager from Moneyview and brought me in as the first engineer. As the team scaled, I took on the EM role and owned engineering delivery, hiring, and development. We had complementary ownership — he focused on product and business alignment, I owned the engineering org and technical execution.
+
+**Follow-up:** *"What's a hire you're most proud of?"* → One engineer I hired came from a non-FinTech background. I took a bet on their problem-solving rigour. Within 18 months they owned our entire onboarding automation platform end-to-end — reducing onboarding time from hours to minutes.
 
 ---
 
@@ -257,7 +265,7 @@ Ledger Write Service        Ledger Read Service
 |---|---|---|
 | Ownership | CIO role → ISO 27001 + SOC 2 at Skydo | 2 certifications, enterprise client signed |
 | Deliver Results | Moneyview payment pipeline redesign | 60% reduction in manual ops |
-| Hire and Develop the Best | Mentored engineers + GenAI standards at Skydo | 30% fewer production incidents |
+| Hire and Develop the Best | First engineer at Skydo — built team 0→12, defined hiring bar, mentored 8 directly | 30% fewer incidents, 2 engineers promoted |
 | Insist on Highest Standards | Rejected ledger shortcut → saved from incident | Zero money lost during gateway failure |
 | Customer Obsession | Automated SME onboarding at Skydo | Hours → minutes |
 | Dive Deep | Goldman Sachs stale VaR root cause investigation | Promoted to VP within 1 year |
