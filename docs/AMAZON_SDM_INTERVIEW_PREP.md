@@ -64,9 +64,9 @@
 
 **"Tell me about a time you raised the bar on your team's technical capability."**
 
-**S:** I joined Skydo as an **IC engineer** — the first engineering hire under a Head of Engineering I had previously worked with at Moneyview. For the first year, it was a small founding team of 5. As the product gained traction and the team needed to scale, I transitioned into the Engineering Manager role and took full ownership of hiring and engineer development — growing the team to 12.
+**S:** I joined Skydo as an **IC engineer** — the first engineering hire under a Head of Engineering I had previously worked with at Moneyview. For the first year, it was a small founding team of 5. As the product gained traction, I transitioned into the Engineering Manager role and owned hiring and engineer development. About a year ago, the Head of Engineering left — I stepped up and took full ownership of the entire engineering org, end-to-end: architecture, delivery, team growth, and technical direction.
 
-**T:** Define a hiring bar from scratch, scale the team, and systematically raise the technical capability of every engineer we brought in — especially around distributed systems reliability, which is non-negotiable in FinTech.
+**T:** Through each phase — IC, EM, and then sole engineering leader — continuously raise the bar on who we hired and how we developed engineers, in a domain where technical rigour directly maps to financial integrity.
 
 **A:**
 - **Hiring:** Took full ownership of the hiring process as we scaled. I designed interview scenarios around real FinTech problems — "how do you ensure a transaction is processed exactly once?" — hiring for slope over current altitude. I passed on candidates with strong résumés who couldn't reason through failure modes. Grew the team from 5 to 12 over roughly 2 years as EM.
@@ -76,7 +76,7 @@
 
 **R:** Production incident rate dropped **~30% year-over-year**. Two engineers I hired and mentored took full module ownership independently — one was promoted. The team became self-sufficient on distributed systems decisions, which freed me to operate at the strategy level rather than being a technical bottleneck on every design.
 
-**Follow-up:** *"What was your relationship with the Head of Engineering?"* → He was my manager from Moneyview and brought me in as the first engineer. As the team scaled, I took on the EM role and owned engineering delivery, hiring, and development. We had complementary ownership — he focused on product and business alignment, I owned the engineering org and technical execution.
+**Follow-up:** *"What was your relationship with the Head of Engineering?"* → He was my manager from Moneyview and brought me in as the first engineer. As the team scaled, I took on the EM role and owned engineering delivery, hiring, and development — he focused on product and business alignment. About a year ago he left the company, and I stepped up to own the full engineering function. That transition forced me to operate at a higher level of ownership across strategy, cross-functional alignment, and org leadership — not just delivery.
 
 **Follow-up:** *"What's a hire you're most proud of?"* → One engineer I hired came from a non-FinTech background. I took a bet on their problem-solving rigour. Within 18 months they owned our entire onboarding automation platform end-to-end — reducing onboarding time from hours to minutes.
 
