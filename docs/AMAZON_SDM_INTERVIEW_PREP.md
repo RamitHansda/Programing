@@ -64,12 +64,12 @@
 
 **"Tell me about a time you raised the bar on your team's technical capability."**
 
-**S:** I joined Skydo as the **first engineer** under a Head of Engineering who I had previously worked with at Moneyview. The company had no engineering team, no hiring process, and no technical culture beyond the two of us. As the team grew and I took on the Engineering Manager role, I became the one defining the hiring bar and owning engineer development end-to-end — for a team that eventually scaled to 12.
+**S:** I joined Skydo as an **IC engineer** — the first engineering hire under a Head of Engineering I had previously worked with at Moneyview. For the first year, it was a small founding team of 5. As the product gained traction and the team needed to scale, I transitioned into the Engineering Manager role and took full ownership of hiring and engineer development — growing the team to 12.
 
-**T:** Define and enforce a hiring bar from near-scratch, and systematically raise the technical capability of every engineer we brought in — especially around distributed systems reliability, which is non-negotiable in FinTech.
+**T:** Define a hiring bar from scratch, scale the team, and systematically raise the technical capability of every engineer we brought in — especially around distributed systems reliability, which is non-negotiable in FinTech.
 
 **A:**
-- **Hiring:** Collaborated with the Head of Engineering initially, then took full ownership of the hiring process as EM. I designed interview scenarios around real FinTech problems — "how do you ensure a transaction is processed exactly once?" — hiring for slope over current altitude. I passed on candidates with strong résumés who couldn't reason through failure modes. Over 3 years, grew the team from 2 to 12.
+- **Hiring:** Took full ownership of the hiring process as we scaled. I designed interview scenarios around real FinTech problems — "how do you ensure a transaction is processed exactly once?" — hiring for slope over current altitude. I passed on candidates with strong résumés who couldn't reason through failure modes. Grew the team from 5 to 12 over roughly 2 years as EM.
 - **Developing:** Engineers I hired were strong at shipping features but had limited exposure to production-grade distributed systems. I ran recurring internal design review sessions: idempotency, distributed locking, saga orchestration, circuit breaking. Created reference architecture documents and made design review mandatory for new services.
 - **Mentored 8 engineers directly** — pairing on design, reviewing architecture, giving explicit feedback on reasoning quality, not just code.
 - **GenAI standards:** Defined org-wide standards for AI coding assistants (Claude, Cursor, Windsurf) — not just "use AI," but how to validate AI-generated code in financial systems where correctness is critical.
