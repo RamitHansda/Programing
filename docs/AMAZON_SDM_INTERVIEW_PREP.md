@@ -69,7 +69,7 @@
 **T:** Through each phase — IC, EM, and then sole engineering leader — continuously raise the bar on who we hired and how we developed engineers, in a domain where technical rigour directly maps to financial integrity.
 
 **A:**
-- **Hiring:** Took full ownership of the hiring process as we scaled. I designed interview scenarios around real FinTech problems — "how do you ensure a transaction is processed exactly once?" — hiring for slope over current altitude. I passed on candidates with strong résumés who couldn't reason through failure modes. Grew the team from 5 to 12 over roughly 2 years as EM.
+- **Hiring:** Took full ownership of the hiring process as we scaled. I designed interview scenarios around real FinTech problems — "how do you ensure a transaction is processed exactly once?" — hiring for slope over current altitude. The bar wasn't pedigree — it was rigour: can this person reason through failure modes in a financial system? Grew the team from 5 to 12.
 - **Developing:** Engineers I hired were strong at shipping features but had limited exposure to production-grade distributed systems. I ran recurring internal design review sessions: idempotency, distributed locking, saga orchestration, circuit breaking. Created reference architecture documents and made design review mandatory for new services.
 - **Mentored 8 engineers directly** — pairing on design, reviewing architecture, giving explicit feedback on reasoning quality, not just code.
 - **GenAI standards:** Defined org-wide standards for AI coding assistants (Claude, Cursor, Windsurf) — not just "use AI," but how to validate AI-generated code in financial systems where correctness is critical.
