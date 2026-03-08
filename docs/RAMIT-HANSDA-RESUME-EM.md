@@ -36,7 +36,7 @@ Engineering Manager with 10+ years of experience building and leading high-perfo
 ### Vice President | Goldman Sachs
 **08/2020 – 07/2022**
 
-- Led engineering and architecture for distributed market risk aggregation systems supporting pricing, VaR, and stress testing across global risk workflows.
+- Led an engineering team of 9 members, owning delivery, architecture, and technical direction for distributed market risk aggregation systems supporting pricing, VaR, and stress testing across global risk workflows.
 - Owned and scaled multi-terabyte, in-memory distributed compute clusters, improving sharding, replication, and fault tolerance.
 - Optimized ingestion and processing of petabyte-scale market data for real-time analytics.
 - Drove cross-functional collaboration with quants and global engineering teams on risk platform modernization.
