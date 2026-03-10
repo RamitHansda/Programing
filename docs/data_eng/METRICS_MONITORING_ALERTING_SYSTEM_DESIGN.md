@@ -634,3 +634,226 @@ Flink Alert Evaluator ──► alerts topic ──► Notification Service ─�
 - Flink checkpoints to S3 every 30s — worst case 30s replay on crash
 - Multi-region health check probers with majority vote — prevents false positives
 - Kafka with 3 replicas + MirrorMaker for cross-region durability
+
+---
+
+## Preventing Overlapping Scrapes for the Same Host
+
+### The Problem
+
+```
+Normal (scrape < interval):
+T+0s   ──► [scrape DB-01 starts] ──► T+8s [done] ──► wait ──► T+15s [next scrape] ✓
+
+Problem (scrape > interval):
+T+0s   ──► [scrape DB-01 starts, slow response...]
+T+15s  ──► [scrape DB-01 starts AGAIN]  ← DB-01 handling 2 concurrent scrapes ✗
+T+22s  ──► [first scrape finally done]
+T+30s  ──► [3rd scrape overlapping with 2nd] ← DB gets hammered ✗
+```
+
+---
+
+### Solution 1: Per-Host Mutex Lock (Single Scraper)
+
+```java
+public class ScraperScheduler {
+
+    // One lock per host
+    private final ConcurrentHashMap<String, Semaphore> hostLocks =
+        new ConcurrentHashMap<>();
+
+    public void scheduleScrape(String hostId, String metricsUrl) {
+        Semaphore lock = hostLocks.computeIfAbsent(hostId, k -> new Semaphore(1));
+
+        executor.submit(() -> {
+            boolean acquired = lock.tryAcquire();
+            if (!acquired) {
+                log.warn("Scrape still in progress for {}, skipping", hostId);
+                return;
+            }
+            try {
+                scrape(hostId, metricsUrl);
+            } finally {
+                lock.release();
+            }
+        });
+    }
+}
+```
+
+**Behavior:**
+```
+T+0s    Scrape DB-01 starts → lock ACQUIRED
+T+15s   Scheduler fires again → tryAcquire() = FALSE → SKIP ✓
+T+22s   Scrape finishes → lock RELEASED
+T+30s   Scheduler fires → tryAcquire() = TRUE → scrape starts ✓
+```
+
+---
+
+### Solution 2: Timeout Guard (Prevent Stuck Locks)
+
+If a scrape hangs forever, the lock is never released → host never scraped again.
+
+```java
+public void scrapeWithTimeout(String hostId, String url) {
+    boolean acquired = lock.tryAcquire();
+    if (!acquired) {
+        long scrapeAge = System.currentTimeMillis() - scrapeStartTimes.get(hostId);
+        if (scrapeAge > 2 * SCRAPE_INTERVAL_MS) {
+            log.error("Scrape for {} stuck for {}ms, force-releasing", hostId, scrapeAge);
+            lock.release();
+            lock.tryAcquire();
+        } else {
+            return;
+        }
+    }
+
+    scrapeStartTimes.put(hostId, System.currentTimeMillis());
+
+    try {
+        Future<MetricBatch> future = executor.submit(() -> fetchMetrics(url));
+        MetricBatch result = future.get(SCRAPE_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+        publishToKafka(hostId, result);
+
+    } catch (TimeoutException e) {
+        log.warn("Scrape timed out for {}", hostId);
+        future.cancel(true);
+
+    } finally {
+        lock.release();
+        scrapeStartTimes.remove(hostId);
+    }
+}
+```
+
+---
+
+### Solution 3: Redis Distributed Lock (Multiple Scraper Instances)
+
+With **multiple scraper instances**, a local JVM lock is useless — each scraper has its own memory.
+
+```
+Scraper-1 (JVM lock: DB-01 = LOCKED)    Scraper-2 (JVM lock: DB-01 = FREE)
+         │                                        │
+         └──────────► scraping DB-01 ◄────────────┘
+                             ↑
+               BOTH scraping DB-01 simultaneously ✗
+               Local lock has NO idea what Scraper-2 is doing
+```
+
+**Redis is the single source of truth for who holds the lock:**
+
+```
+Scraper-1 ──┐
+             ├──► Redis ──► "who owns DB-01 lock?"
+Scraper-2 ──┘
+```
+
+```python
+import redis
+import time
+
+r = redis.Redis()
+SCRAPE_TIMEOUT = 30   # auto-expire lock after 30s even if scraper crashes
+
+def scrape_with_distributed_lock(host_id, metrics_url):
+    lock_key   = f"scrape:lock:{host_id}"
+    lock_value = f"{scraper_id}:{time.time()}"   # who holds it + when
+
+    # NX = only set if not exists, EX = auto-expire after 30s
+    acquired = r.set(lock_key, lock_value, nx=True, ex=SCRAPE_TIMEOUT)
+
+    if not acquired:
+        print(f"[{host_id}] Scrape in progress on another scraper, skipping")
+        return
+
+    try:
+        result = fetch_metrics(metrics_url)
+        publish_to_kafka(host_id, result)
+    finally:
+        # Only release YOUR lock (not another scraper's lock after expiry)
+        current = r.get(lock_key)
+        if current and current.decode() == lock_value:
+            r.delete(lock_key)
+```
+
+**Full flow with 2 scrapers:**
+
+```
+T+0s:   Scraper-1: SET scrape:lock:DB-01 "s1:100" NX EX 30  → OK   (acquired ✓)
+T+0s:   Scraper-2: SET scrape:lock:DB-01 "s2:100" NX EX 30  → NIL  (skip ✓)
+
+T+8s:   Scraper-1 finishes → DEL scrape:lock:DB-01
+T+15s:  Scraper-1 or Scraper-2 acquires lock for next cycle
+
+CRASH SCENARIO:
+T+0s:   Scraper-1 acquires lock, starts scraping
+T+5s:   Scraper-1 crashes — lock never manually released
+T+30s:  Redis auto-expires the lock (EX 30)
+T+30s:  Scraper-2 can now acquire → scraping resumes ✓
+```
+
+---
+
+### Solution 4: Adaptive Scrape Interval
+
+Start the next scrape only **after the previous one finishes** + a minimum wait.
+
+```
+Fixed interval (BAD when slow):
+├──[scrape 20s]─────────┤├──[scrape 20s]──  OVERLAP ✗
+
+Adaptive (GOOD):
+├──[scrape 20s]─────────┤wait 5s├──[scrape...]  No overlap ✓
+├──[scrape 8s]──┤wait 7s├──[scrape 8s]──        Respects interval ✓
+```
+
+```java
+void runScrapeLoop(String hostId) {
+    while (running) {
+        long start = System.currentTimeMillis();
+        try {
+            scrape(hostId);
+        } catch (Exception e) {
+            log.error("Scrape failed for {}", hostId, e);
+        }
+        long elapsed  = System.currentTimeMillis() - start;
+        long waitTime = Math.max(0, SCRAPE_INTERVAL_MS - elapsed);
+        Thread.sleep(waitTime);
+        // If scrape took 20s and interval is 15s → waitTime=0 (immediate retry)
+        // If scrape took 8s  and interval is 15s → waitTime=7s
+    }
+}
+```
+
+---
+
+### Which Solution to Use When
+
+| Scenario | Solution |
+|---|---|
+| Single scraper, many hosts | Per-host Semaphore |
+| Scrapes can hang / network timeouts | Timeout Guard |
+| Multiple scraper instances | Redis Distributed Lock |
+| Scrape duration varies widely | Adaptive Interval |
+| Production system | **Combine all four** |
+
+---
+
+### Production Recommendation
+
+```
+Local Semaphore (per host)          ← first line of defense
+    +
+HTTP timeout on scrape (30s hard)   ← prevent hung connections
+    +
+Stuck-lock detector (2× interval)   ← release locks of crashed scrapes
+    +
+Redis distributed lock (NX + EX)    ← cross-scraper safety
+    +
+Adaptive interval                   ← graceful degradation under load
+```
+
+This ensures **one and only one scrape per host at any time**, across any number of scraper instances, even in crash/failure scenarios.
