@@ -8,7 +8,7 @@ At Skydo, I designed the payments and settlement platform from scratch — it no
 
 A few things I got right early: idempotency keys at the edge propagated across all service calls, so retries were always safe. Kafka for async event-driven flows so onboarding and transaction pipelines scaled independently. Redis-based distributed locking for scheduled jobs like reconciliation and settlement sweeps — so exactly-one execution was guaranteed even in multi-node setups.
 
-For traffic spikes, we ran on GCP Cloud Run with auto-scaling and load-tested to 5x peak before every major launch.
+For traffic spikes, we ran on EC2-backed ECS with auto-scaling and load-tested to 5x peak before every major launch.
 
 At Goldman Sachs, I migrated a legacy in-memory risk compute cluster (multi-terabyte) without downtime. The trick was introducing an abstraction layer between sharding logic and computation, so we could re-shard live while the system was serving real-time VaR queries during trading hours.
 
