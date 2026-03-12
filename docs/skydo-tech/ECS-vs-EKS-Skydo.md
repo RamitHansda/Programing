@@ -118,16 +118,85 @@ For **blue/green deploys** (CodeDeploy + ECS):
 
 ### Auto Scaling in ECS
 
-ECS services integrate with **Application Auto Scaling** to scale task count based on:
+ECS services integrate with **Application Auto Scaling** to scale task count. The right metric depends entirely on the type of workload. At Skydo, there are three distinct workload categories:
 
-| Metric | Example |
-|---|---|
-| CPU utilization | Scale out when avg CPU > 70% |
-| Memory utilization | Scale out when avg memory > 80% |
-| ALB request count per target | Scale out when RPS per task > 1000 |
-| Custom CloudWatch metric | SQS queue depth for async workers |
+---
 
-Scale-in cooldown prevents tasks from being terminated too aggressively after a traffic spike.
+#### Category 1 — Payment API (Synchronous, Latency-Sensitive)
+
+These are the customer-facing APIs handling international payment initiation, FX rate queries, and status checks. Latency is a first-class concern — a degraded payment API is a direct user-facing failure.
+
+**Primary metric: ALB Request Count per Target**
+- The most direct signal for a synchronous API.
+- Each task has a known throughput capacity before latency degrades (e.g., 400–500 RPS/task at acceptable p99 latency).
+- Scale out when the rolling average crosses 70–80% of that capacity.
+- This gives ECS time to launch new tasks and register them with the ALB *before* tasks are overwhelmed.
+
+**Secondary metric: CPU Utilization**
+- Payment processing is CPU-bound — TLS termination, JWT validation, DB queries, external gateway calls, encryption via KMS all consume CPU.
+- Scale out at 65–70% average CPU across the service.
+- Acts as a safety net when request rate alone doesn't capture compute pressure (e.g., expensive reconciliation queries on the same service).
+
+**Do NOT use memory here.** Memory is slow-moving and a lagging indicator — by the time memory pressure is visible, the service is already degraded.
+
+**Scale-in must be conservative.** Use a long cooldown (300–600 seconds). Payment APIs should never scale in aggressively during active traffic — the cost of terminating a task mid-transaction far exceeds the cost of a few extra running tasks.
+
+```
+Scale-out trigger:  ALB RPS/task > 400  OR  avg CPU > 70%
+Scale-in trigger:   ALB RPS/task < 150 AND avg CPU < 30%  (sustained 10 min)
+Min tasks:          2  (always maintain redundancy across AZs)
+Max tasks:          20 (hard cap to protect downstream DB connection pool)
+```
+
+---
+
+#### Category 2 — Reconciliation & Onboarding Workers (Async, SQS-Driven)
+
+These are background workers consuming from SQS queues — settlement reconciliation, onboarding document processing, debit instruction generation. They are not latency-sensitive but have SLA windows (e.g., reconciliation must complete before EOD).
+
+**Primary metric: SQS `ApproximateNumberOfMessagesVisible`**
+- Queue depth is the direct measure of backlog.
+- Scale out when messages accumulate beyond what current tasks can drain within the SLA window.
+- Example: if each task processes 10 messages/min and your SLA requires draining within 30 minutes, scale out when queue depth > (tasks × 10 × 30).
+
+**Secondary metric: SQS `ApproximateAgeOfOldestMessage`**
+- This is the most important SLA-protection metric.
+- If the oldest message in the queue is aging (e.g., >5 minutes for onboarding, >15 minutes for reconciliation), scale out aggressively regardless of queue depth.
+- A high message age means workers are falling behind — this is a direct leading indicator of an SLA breach on settlement timelines.
+
+**Scale-in is aggressive here.** Workers are stateless. Once the queue drains, scale in quickly to zero (or minimum 1) to save cost. These are ideal candidates for **Fargate Spot** — if a spot task is interrupted, the SQS message becomes visible again after the visibility timeout and another task picks it up.
+
+```
+Scale-out trigger:  QueueDepth > 500  OR  OldestMessageAge > 5 min
+Scale-in trigger:   QueueDepth < 10 (sustained 5 min)
+Min tasks:          0 (scale to zero during off-hours)
+Max tasks:          50 (bounded by downstream DB write throughput)
+Launch type:        Fargate Spot (interruptible — SQS handles retries)
+```
+
+---
+
+#### Category 3 — Scheduled / EventBridge-Triggered Jobs
+
+These are one-off ECS task runs triggered by EventBridge rules or Lambda (e.g., daily FX rate refresh, EOD settlement batch, compliance report generation). They are not long-running services, so traditional auto scaling does not apply.
+
+**Concurrency is controlled at the trigger level:**
+- EventBridge schedules the task run directly — ECS launches a task, it runs to completion, terminates.
+- For fan-out patterns (e.g., process N entities in parallel), use Lambda to split work and trigger multiple ECS tasks concurrently, bounded by a configurable max concurrency parameter.
+- No ALB, no desired count, no scaling policy needed.
+
+---
+
+#### Auto Scaling Metric Summary
+
+| Service Type | Primary Metric | Secondary Metric | Scale-in Strategy | Fargate Spot? |
+|---|---|---|---|---|
+| Payment API | ALB RPS per target | CPU utilization | Conservative (10 min cooldown) | No — on-demand only |
+| Reconciliation worker | SQS queue depth | Oldest message age | Aggressive (scale to 0) | Yes |
+| Onboarding worker | SQS queue depth | Oldest message age | Aggressive (scale to 0) | Yes |
+| Scheduled jobs | N/A (EventBridge controlled) | N/A | N/A — task runs to completion | Optional |
+
+Scale-in cooldown prevents tasks from being terminated too aggressively after a traffic spike. For payment APIs, always prefer over-provisioning to under-provisioning — the cost asymmetry heavily favors availability.
 
 ---
 
