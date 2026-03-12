@@ -11,6 +11,7 @@ public final class InMemoryMessageBroker implements MessageBroker {
 
     private final Map<String, Topic<?>> topics = new ConcurrentHashMap<>();
     private final Map<String, Queue<?>> queues = new ConcurrentHashMap<>();
+    private final Map<String, ReliableQueue<?>> reliableQueues = new ConcurrentHashMap<>();
     private volatile boolean shutdown;
 
     @Override
@@ -45,10 +46,34 @@ public final class InMemoryMessageBroker implements MessageBroker {
         return (BoundedQueue<T>) queues.computeIfAbsent(name, n -> new InMemoryBoundedQueue<T>(n, capacity));
     }
 
+    /**
+     * Get or create a reliable queue with at-least-once delivery guarantees.
+     *
+     * @param name               unique queue name
+     * @param maxRetries         max delivery attempts before routing to DLQ
+     * @param visibilityTimeoutMs millis a consumer has to ack/nack before automatic re-delivery
+     */
+    @SuppressWarnings("unchecked")
+    public <T> ReliableQueue<T> reliableQueue(String name, int maxRetries, long visibilityTimeoutMs) {
+        if (shutdown) {
+            throw new IllegalStateException("Broker is shutdown");
+        }
+        return (ReliableQueue<T>) reliableQueues.computeIfAbsent(
+                name, n -> new InMemoryReliableQueue<T>(n, maxRetries, visibilityTimeoutMs));
+    }
+
+    /** Reliable queue with default settings (3 retries, 30 s visibility timeout). */
+    public <T> ReliableQueue<T> reliableQueue(String name) {
+        return reliableQueue(name,
+                InMemoryReliableQueue.DEFAULT_MAX_RETRIES,
+                InMemoryReliableQueue.DEFAULT_VISIBILITY_TIMEOUT_MS);
+    }
+
     @Override
     public void shutdown() {
         shutdown = true;
         topics.clear();
         queues.clear();
+        reliableQueues.clear();
     }
 }
