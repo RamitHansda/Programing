@@ -61,8 +61,81 @@
 
 **R:** Performance improved and held. The engineer went on to own a significant module independently. The insight that drove this: most underperformance is a clarity problem, not a motivation problem. When the gap is named specifically and "good" is defined concretely, the engineer has a real target.
 
-**If performance had NOT improved:**
-> "If the 30-day check-in showed no improvement, the next step would be a formal PIP: explicit, time-bound, written expectations with weekly milestones. A PIP isn't a punishment — it's a last structured attempt to give someone a clear path. If they can't meet it, the outcome is clear and fair for everyone."
+---
+
+### TIMELINE (have this ready — interviewers always probe for specifics)
+
+```
+Week 1     Sprint 1 slip: 2 days late on delivery.
+           → I noted it but did not intervene yet. One data point is noise.
+
+Week 3     Sprint 2 slip: 3 days late. Same idempotency comment
+           flagged on a PR — not actioned from 2 weeks prior.
+           → Pattern confirmed. Two sprints, same issues. I had enough signal.
+
+Week 3     First 1:1 intervention — same week I confirmed the pattern.
+(Day 1)    Did NOT wait for a 3rd sprint. Named the specific gaps:
+           sprint slip dates, the exact PR comment that wasn't addressed.
+
+Week 3     Personal circumstances surfaced in the conversation.
+(Day 2)    I acknowledged them, adjusted the immediate-term expectations,
+           but did NOT remove the expectation — defined a 30-day window instead.
+
+Week 3     Written expectations document shared within 48 hours of the 1:1.
+(Day 3)    What "good" looks like: sprint completion, code review engagement.
+           Agreed on by both of us. This is the anchor for the 30-day check-in.
+
+Weeks 4–7  Weekly check-ins every Monday — 20 minutes.
+           Not a status update. Specific questions:
+           "Any blockers? How are the review comments tracking?"
+
+Week 7     Mid-point check: improvement visible — sprint 3 delivered on time,
+           review comments actioned within 24 hours of each PR.
+           → Shared this observation directly in the check-in. Named the progress.
+
+Week 7+4   30-day formal check-in.
+(~Week 7)  Performance had measurably improved across both dimensions.
+           Moved to monthly check-ins. Situation considered closed.
+
+3 months   Engineer took full ownership of a significant module independently.
+later      No further performance concerns.
+```
+
+**Total timeline: ~7 weeks from first signal to situation closed.**
+**Time from pattern confirmed to first intervention: same week (3 days).**
+
+---
+
+### TIMELINE PROBE QUESTIONS — exact answers to have ready
+
+**"When did you first notice the problem?"**
+> "End of Sprint 1 — the delivery slipped by 2 days. I noted it but treated it as a single data point. I don't intervene on one data point."
+
+**"Why didn't you act after the first sprint slip?"**
+> "One missed sprint isn't a pattern — it could be scope estimation, an unexpected blocker, anything. I was watching for the pattern. When Sprint 2 had the same slip AND the same code review issue hadn't been addressed from two weeks prior, that was the signal. I acted that week."
+
+**"How long between noticing the pattern and your first conversation?"**
+> "Three days. I confirmed the pattern on a Monday when Sprint 2 ended. I had the 1:1 on Thursday of the same week. I didn't let a week go by."
+
+**"Why didn't you act sooner — after Sprint 1?"**
+> "Because acting on a single data point would have been a mistake — it risks labeling someone a problem before you actually know what's happening. Two sprints with the same pattern is a signal. One is noise. The mistake EMs make is either acting too early on noise or too late on a real signal. I try to calibrate to the second sprint."
+
+**"How long was the improvement period?"**
+> "Formally, 30 days. In practice, I was seeing measurable improvement by week 4 of that window — sprint delivered on time, review comments actioned. The 30-day mark was the formal check-in where I could say: this is resolved."
+
+**"What were the weekly check-ins like?"**
+> "20 minutes, every Monday. Specific, not general. I'd ask: 'Any blockers on this sprint?' and 'The PR from last Wednesday had two comments — where are those?' I kept a running note of each check-in so I had a record of what was discussed and what progress was made."
+
+**"Did you document any of this?"**
+> "Yes. I sent a written summary after the first 1:1 — what we discussed, the specific gaps, and what 'good' looks like over the next 30 days. I did this for two reasons: it gave the engineer something concrete to work from, and it created a written record so there was no ambiguity later about what was expected."
+
+**"What if it had gone on longer — say 3 months with no improvement?"**
+> "By the 30-day check-in with no improvement, I would have moved to a formal PIP: written, HR-involved, time-bound with weekly milestones and explicit consequences. Three months of no improvement after a PIP means the outcome is clear — the role isn't the right fit. The process exists to be fair to the engineer and fair to the team."
+
+---
+
+**If performance had NOT improved at 30 days:**
+> "The next step would be a formal PIP: explicit, time-bound, written expectations with weekly milestones. A PIP isn't a punishment — it's a last structured attempt to give someone a clear path. If they can't meet it, the outcome is clear and fair for everyone."
 
 **Follow-ups:**
 - *"What if the performance issues are interpersonal, not technical?"* → Same framework: name the specific behavior, not the personality. "In the last three design reviews, you interrupted peers before they finished their point. That's shutting down collaboration." Behavior, not character.
