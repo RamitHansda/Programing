@@ -50,13 +50,11 @@ Helper for code:
           } else{
               str.append(mapOfChar.get(25));
           }
-           num = num-1/26 ;
+           num = (num-1)/26 ;
         }
         return str.reverse().toString();
 
     }
-
-    TreeSet<Character> charSet = new TreeSet<>();
 
 
 
