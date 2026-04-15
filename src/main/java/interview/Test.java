@@ -2,7 +2,6 @@ package interview;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.TreeSet;
 
 public class Test {
 /*
@@ -36,26 +35,25 @@ Helper for code:
     public static void main(String[] args) {
         List<String> mapOfChar = new ArrayList<>(List.of( "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z"));
         int n =12345678;
-        System.out.println(covertAZ(n, mapOfChar));
+        System.out.println(convertAZ(n, mapOfChar));
     }
 
-    private static String covertAZ(int num, List<String> mapOfChar){
+    private static String convertAZ(int num, List<String> mapOfChar){
         StringBuilder str= new StringBuilder();
 
 
-        while(num>26){
+        while(num>0){
             int rem=num%26;
-          if(rem>0){
-            str.append(mapOfChar.get(rem-1));
-          } else{
-              str.append(mapOfChar.get(25));
-          }
-           num = (num-1)/26 ;
+            if(rem>0){
+                str.append(mapOfChar.get(rem-1));
+            } else{
+                str.append(mapOfChar.get(25));
+            }
+           num =(num-1)/26 ;
         }
         return str.reverse().toString();
 
     }
-
 
 
 }
