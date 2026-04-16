@@ -1,5 +1,27 @@
 # LLD: In-process pub-sub message hub
 
+## Interview-ready snapshot
+
+**Say first (≈30s):** **`Topic`** owns subscriber set; **`publish`** fans out; **`DispatchPolicy` strategy** for sync vs executor; **subscriber errors isolated**; reentrancy policy stated upfront.
+
+**Default assumptions:** In-process; ordering best-effort per topic unless they require serial dispatch.
+
+| Phase | ~Time | Deliver |
+|-------|------|---------|
+| Align | 5 min | Sync vs async; error policy; wildcard topics. |
+| Model | 8 min | Topic, Message, Subscriber, Subscription handle, Bus façade. |
+| API + flow | 8 min | subscribe → publish diagram; unsubscribe. |
+| Hard | 15 min | Copy-on-write subscriber list vs locks; reentrant publish; slow subscriber. |
+| Close | 5 min | Durable log / Kafka comparison as HLD. |
+
+**Whiteboard order:** (1) Topic box (2) subscriber list (3) publish loop (4) error boundary (5) dispatch policy.
+
+**Likely probes:** Backpressure? Memory if subscribers never unsubscribe?
+
+**30s closer:** Observer core; bus mediates policy; strategy swaps dispatch without rewriting topic.
+
+---
+
 ## Interview prompt
 
 Design a **publish–subscribe** bus: topics, subscribers, fan-out delivery, optional filtering.
@@ -20,6 +42,20 @@ Design a **publish–subscribe** bus: topics, subscribers, fan-out delivery, opt
 
 - **Subscriber isolation** (one slow subscriber must not block others if async is promised).
 - **Reentrancy**: publishing from within subscriber—define deadlock policy (often “same-thread nested OK, log otherwise”).
+
+## Domain model
+
+| Kind | Type | Responsibility |
+|------|------|----------------|
+| **Aggregate root** | `Topic<T>` | Name, subscriber registry, optional wildcard matcher; owns subscribe/unsubscribe invariants. |
+| **Value object** | `Message<T>` | Payload + metadata (topic name, publish time, correlation id). |
+| **Port** | `Subscriber<T>` | Callback contract for consumers. |
+| **Facade** | `MessageBus` | Topic registry, `publish` routing, error/dispatch policy. |
+| **Handle** | `Subscription` | Disposable registration (id for unsubscribe). |
+
+**Relationships:** `Topic` **has many** `Subscriber`s; `MessageBus` **has many** `Topic`s.
+
+**Not modeled:** durable log, consumer groups, partition leadership (Kafka-style)—call out as HLD/infra extension.
 
 ## Design patterns
 

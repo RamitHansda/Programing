@@ -1,5 +1,27 @@
 # LLD: Rate limiter (per-tenant / per-key)
 
+## Interview-ready snapshot
+
+**Say first (≈30s):** Per-key limiter behind `tryAcquire`; **Strategy** for token bucket vs window algorithms; **immutable policy** + **mutable per-key state** in a concurrent map. Monotonic clock unless they want wall time.
+
+**Default assumptions:** Single JVM, thread-safe hot path; bounded or evictable key set if they care about memory attacks.
+
+| Phase | ~Time | Deliver |
+|-------|------|---------|
+| Align | 5 min | Distributed or not; exact vs approximate sliding window; retry-after required or not. |
+| Model | 8 min | `RateLimitAlgorithm`, config VO, `KeyState`, orchestrating service, map ownership. |
+| API + flow | 7 min | Interfaces + one walkthrough: lookup → algorithm updates state → Decision. |
+| Hard | 12 min | Per-key atomicity, CAS vs lock; key explosion; fail-open vs fail-closed. |
+| Close | 3 min | Burst vs smoothness tradeoff; Redis/cell limits as HLD follow-on. |
+
+**Whiteboard order:** (1) key → state (2) `RateLimitAlgorithm` (3) `tryAcquire` sequence (4) `ConcurrentHashMap` + concurrency note (5) optional metrics.
+
+**Likely probes:** Singleton? (Prefer DI.) Sliding window under contention? Retry-after formula?
+
+**30s closer:** Policies plug in as strategies; service owns lifecycle of map entries and observability; clock injectable for tests.
+
+---
+
 ## Interview prompt (typical)
 
 Design an in-process **rate limiter** used by an API gateway or service mesh sidecar. Support multiple algorithms (token bucket, fixed window, sliding window). Keys are strings (tenant id, user id, IP). The API must answer: **“Is this request allowed right now?”** and optionally **“When can I retry?”**
@@ -22,6 +44,18 @@ Design an in-process **rate limiter** used by an API gateway or service mesh sid
 - **Thread-safe** concurrent access.
 - **Low allocation** on hot path (avoid boxing churn if possible).
 - **Observable**: counts for allowed/denied, per-algorithm.
+
+## Domain model
+
+| Kind | Types | Notes |
+|------|--------|------|
+| **Value object** | `RateLimitKey` (or `String`), `Decision`, algorithm **config** (capacity, refill rate, window) | Config is immutable after build; no shared mutable policy. |
+| **Mutable per-key state** | `BucketState` / `WindowCounters` (algorithm-specific) | Owned inside a concurrent map entry; identity = key string. |
+| **Policy** | `LimitPolicy` = key matcher + which `RateLimitAlgorithm` + config | Optional if all keys share one policy. |
+| **Application service** | `RateLimiter` / `RateLimiterService` | Orchestrates lookup, `tryAcquire`, metrics—not the algorithm itself. |
+| **Strategy** | `RateLimitAlgorithm` | Pure decision + how to update **that key’s** state given `now`. |
+
+**Relationships:** many keys → many `KeyState` rows; one `RateLimiterService` → many algorithms (if multi-policy). **Not** in the domain: HTTP layer, Redis (unless you extend scope).
 
 ## Core invariants
 

@@ -1,5 +1,27 @@
 # LLD: Notification dispatcher (multi-channel)
 
+## Interview-ready snapshot
+
+**Say first (≈30s):** Build **`Notification`** value, apply **user prefs + policies**, fan out to **`NotificationChannel` strategies** (email/SMS/push); **isolate** provider failures; **Adapter** hides SDKs.
+
+**Default assumptions:** At-least-once or best-effort—state which; dedupe key if retries.
+
+| Phase | ~Time | Deliver |
+|-------|------|---------|
+| Align | 5 min | Delivery guarantee; PII in logs; templating locale. |
+| Model | 8 min | Notification VO, preferences, channels, dispatcher, results. |
+| API + flow | 8 min | dispatch one event; show channel loop + try/catch policy. |
+| Hard | 12 min | Partial failure visibility; idempotency key per channel; backoff stub. |
+| Close | 5 min | Async queue + worker pool as scale-out note. |
+
+**Whiteboard order:** (1) input event (2) rendered Notification (3) channel interface (4) fan-out (5) failure isolation.
+
+**Likely probes:** Quiet hours? Rate limit per provider? Ordering?
+
+**30s closer:** Rendering pure; transport behind ports; dispatcher owns orchestration and failure policy.
+
+---
+
 ## Interview prompt
 
 Design a component that sends **notifications** across channels (email, SMS, push). Users choose preferences; templates vary by event type.
@@ -20,6 +42,20 @@ Design a component that sends **notifications** across channels (email, SMS, pus
 
 - **Provider isolation**: Twilio outage should not break email path.
 - **Backoff / retry** policy per provider (even if stubbed).
+
+## Domain model
+
+| Kind | Type | Responsibility |
+|------|------|----------------|
+| **Value object** | `Notification` / `NotificationPayload` | Channel-agnostic content + metadata (locale, dedupe key, severity). |
+| **Entity** | `UserPreferences` | Opt-in channels, quiet hours, locale. |
+| **Port** | `NotificationChannel` | Email/SMS/push capability; maps domain notification to provider wire format in adapter layer. |
+| **Domain service** | `NotificationDispatcher` | Selects channels, applies policy, invokes ports, records outcomes. |
+| **Value object** | `DeliveryId`, `DeliveryResult` | Correlation and status for idempotent retries. |
+
+**Relationships:** dispatcher **reads** `UserPreferences`, **fans out** to N channels for one logical event.
+
+**Not modeled:** SendGrid HTTP client details (behind adapter).
 
 ## Design patterns
 

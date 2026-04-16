@@ -1,18 +1,29 @@
 # Staff-level LLD interview playbook (Java)
 
-This folder is a **structured interview library**: each document is written as if you were explaining the design to a senior panel—**requirements, invariants, boundaries, concurrency, failure modes, tests**, and **where design patterns earn their keep** (not pattern theater).
+This folder is **interview-ready**: every problem guide opens with a **timeboxed snapshot** (what to say first, what to draw, likely probes). Deep sections below that snapshot are your reference during prep, not text you read aloud in the room.
 
-## How to use
+**Before mock day:** read [INTERVIEW-RUNBOOK.md](./INTERVIEW-RUNBOOK.md) once (shared 45-minute clock, opener script, staff signals, red flags).
 
-1. Pick one problem. Spend **5 minutes** clarifying scope with the interviewer (single machine vs distributed, sync vs async, persistence or in-memory).
-2. List **invariants** and **failure modes** before class names.
-3. Sketch **public APIs** (interfaces) and **one happy path** sequence diagram.
-4. Only then add **patterns** where they reduce coupling or encode real variation.
+**Domain models:** [00-domain-models-and-layers.md](./00-domain-models-and-layers.md) explains conceptual vs domain vs storage and whiteboard order.
+
+## How to use (prep vs live)
+
+**Prep (the night before):** Read snapshot + domain model + invariants + concurrency + testing for 2–3 problems.
+
+**Live round:** Follow the snapshot’s **clock** and **whiteboard order**; use clarifying questions from each file; if probed, jump to the matching section (failure modes, follow-ups).
+
+1. **~5 min** — Align scope (single JVM vs distributed, sync vs async, persistence or not).
+2. **~10 min** — Conceptual nouns + **domain model** (aggregates, entities, VOs, relationships).
+3. **~10 min** — **Invariants** + **public APIs** (Java interfaces) + one happy-path sequence.
+4. **~10 min** — **Concurrency**, consistency, idempotency, explicit failure policy.
+5. **Rest** — Tests, extensions, tradeoff recap.
 
 ## Index
 
 | # | Topic | Primary patterns | File |
 |---|--------|------------------|------|
+| — | **Interview runbook (read first)** | Timebox, opener, signals | [INTERVIEW-RUNBOOK.md](./INTERVIEW-RUNBOOK.md) (each `NN-*.md` has **Interview-ready snapshot** at top) |
+| 0 | Domain models & layers (meta) | Aggregates, entities, VOs | [00-domain-models-and-layers.md](./00-domain-models-and-layers.md) |
 | 1 | Rate limiter | Strategy, optional Template Method | [01-rate-limiter.md](./01-rate-limiter.md) |
 | 2 | Parking lot | Strategy, Factory, domain services | [02-parking-lot.md](./02-parking-lot.md) |
 | 3 | Elevator controller | State, Strategy | [03-elevator-controller.md](./03-elevator-controller.md) |
@@ -36,6 +47,7 @@ This folder is a **structured interview library**: each document is written as i
 
 ## Staff bar: what interviewers listen for
 
+- **A clear domain model**: aggregates, identity, and where state transitions are legal—before implementation detail.
 - **Explicit tradeoffs**: e.g. fairness vs throughput in elevators; exact vs approximate rate limiting.
 - **Concurrency story**: which data is shared, what locks or structures you use, what you *refuse* to synchronize globally.
 - **Testability**: pure domain vs I/O boundaries; fakes for time and randomness.

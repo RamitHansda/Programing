@@ -1,5 +1,27 @@
 # LLD: Logger framework (handlers, levels, context)
 
+## Interview-ready snapshot
+
+**Say first (≈30s):** Immutable **`LogEvent`** flows through **filter chain** then **fan-out appenders**; broken appender must not kill pipeline; lazy message with `Supplier` on hot path.
+
+**Default assumptions:** Sync dispatch first; mention async queue + drop policy only if they ask.
+
+| Phase | ~Time | Deliver |
+|-------|------|---------|
+| Align | 5 min | MDC model; async or not; hierarchy of levels. |
+| Model | 8 min | LogEvent, Logger, filters, appenders, pipeline engine. |
+| API + flow | 8 min | `publish` path sketch; level ordering table. |
+| Hard | 12 min | Reentrant logging; exception isolation per appender; optional async overflow. |
+| Close | 5 min | JSON layout as decorator; sampling as filter. |
+
+**Whiteboard order:** (1) LogEvent fields (2) filter chain (3) appender list (4) isolation try/catch boundary (5) optional async box.
+
+**Likely probes:** Child logger effective level? What if appender calls logger?
+
+**30s closer:** Chain of Responsibility for filters; pipeline owns policy; appenders are ports with strict failure containment.
+
+---
+
 ## Interview prompt
 
 Design a **logging library** similar in spirit to Logback/Log4j2: levels, multiple appenders, formatting, and filtering.
@@ -20,6 +42,20 @@ Design a **logging library** similar in spirit to Logback/Log4j2: levels, multip
 
 - **Hot path performance**: avoid string concatenation if disabled (`Supplier<String>` lazy message).
 - **Failure isolation**: one broken appender must not disable others.
+
+## Domain model
+
+| Kind | Type | Responsibility |
+|------|------|----------------|
+| **Value object** | `LogEvent` | Immutable snapshot: time, level, logger name, message supplier, throwable, MDC map. |
+| **Entity** | `Logger` (named) | Effective level, reference to `LoggerEngine` / parent for hierarchy. |
+| **Policy objects** | `LogFilter` | Predicate on `LogEvent` (chain). |
+| **Infrastructure ports** | `LogAppender` | Side effect sink; not domain in strict DDD, but core **model** of the library. |
+| **Facade** | `LoggerPipeline` / `LoggerEngine` | Wires filters + appenders; applies isolation and reentrancy guards. |
+
+**Relationships:** many `Logger`s may share one pipeline configuration; each `publish` creates one `LogEvent`.
+
+**Not modeled:** log rotation files on disk (OS), remote syslog UDP (network stack).
 
 ## Design patterns
 

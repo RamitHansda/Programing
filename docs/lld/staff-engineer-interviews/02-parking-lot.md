@@ -1,5 +1,27 @@
 # LLD: Parking lot
 
+## Interview-ready snapshot
+
+**Say first (≈30s):** `ParkingLot` aggregate owns spots; **atomic assign** of one compatible spot per vehicle; ticket is immutable proof; pricing/assignment are **strategies** if in scope.
+
+**Default assumptions:** In-memory or unspecified persistence; single process unless they ask multi-gate distributed leasing.
+
+| Phase | ~Time | Deliver |
+|-------|------|---------|
+| Align | 5 min | Payment timing; assignment rule (nearest vs any); concurrency at gate. |
+| Model | 10 min | Lot → levels → spots; vehicle vs spot type; ticket; allocator service. |
+| API + flow | 8 min | `park` / `unpark` signatures; one happy path + failure (full lot). |
+| Hard | 12 min | No double booking; lock granularity; idempotent unpark if asked. |
+| Close | 5 min | EV/charging as second resource; waitlist extension. |
+
+**Whiteboard order:** (1) aggregates and composition (2) spot state (3) `park` sequence (4) concurrency on assign (5) optional `SpotAssignmentStrategy`.
+
+**Likely probes:** Where do you lock? Who owns “available” invariant? What if vehicle type changes mid-design?
+
+**30s closer:** Consistency boundary is the lot (or level); strategies swap assignment/pricing without rewriting core.
+
+---
+
 ## Interview prompt
 
 Design a **parking lot** system: multiple floors, multiple spot types (compact, large, handicapped, EV). Vehicles enter, get assigned a spot, pay (optional in scope), and exit freeing the spot.
@@ -23,12 +45,20 @@ Design a **parking lot** system: multiple floors, multiple spot types (compact, 
 - **Consistency**: a spot must not be double-assigned.
 - **Extensibility**: new vehicle types or pricing rules without rewriting parking core.
 
-## Domain model (keep it boring and correct)
+## Domain model (aggregates and nouns)
 
-- **ParkingLot** aggregates **Levels** (or a flat pool if interviewer insists).
-- **ParkingSpot** has `SpotType` and `SpotState` (available/occupied).
-- **Vehicle** is abstract or interface with `requiredSpotType()` (or strategy).
-- **ParkingTicket** is immutable value: id, spot id, entry time.
+| Kind | Type | Responsibility |
+|------|------|----------------|
+| **Aggregate root** | `ParkingLot` | Owns levels/spots; enforces “no double booking”; entry point for `park` / `unpark` queries. |
+| **Entity** | `Level` (optional), `ParkingSpot` | Spot has stable id; `SpotType` + lifecycle `SpotState` (available/occupied). |
+| **Entity / VO** | `Vehicle` (or interface + concrete types) | Describes **constraints** (which spot types are legal), not the allocation algorithm. |
+| **Value object** | `ParkingTicket` / `TicketId` | Immutable: ticket id, spot id, `VehicleId`, `enteredAt`. |
+| **Domain service** | `ParkingAllocator` (or method on lot with injected `SpotAssignmentStrategy`) | Finds candidate spot and commits assignment in one consistency step. |
+| **Optional** | `Payment`, `Receipt`, `PricingPolicy` | Only if payment is in scope; keep out of core `ParkingSpot` if possible. |
+
+**Composition:** `ParkingLot` **contains** `Level`s **contains** `ParkingSpot`s. **Association:** `ParkingTicket` **references** one `ParkingSpot` and one `Vehicle` identity.
+
+**Not modeled here:** UI, gate hardware, persistence schema (unless asked).
 
 ## Design patterns
 

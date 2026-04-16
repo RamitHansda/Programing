@@ -1,5 +1,27 @@
 # LLD: In-memory file system
 
+## Interview-ready snapshot
+
+**Say first (≈30s):** **Composite** `Node` tree: directories own children; **Path** value for parsing/normalization; move/delete enforce **no cycles**; `FileSystem` façade over root.
+
+**Default assumptions:** Absolute paths first; single-threaded or RW-lock unless they want fine-grained.
+
+| Phase | ~Time | Deliver |
+|-------|------|---------|
+| Align | 5 min | `..` and `.`; symlinks in or out; concurrent edits. |
+| Model | 10 min | Node, File, Directory, Path; parent pointers. |
+| API + flow | 10 min | mkdir, create, write, read, delete, move flows. |
+| Hard | 10 min | Cycle check on move; traversal iterator; locking scope. |
+| Close | 5 min | Hardlinks/inodes as extension. |
+
+**Whiteboard order:** (1) Node interface (2) small tree example (3) move cycle bad case (4) Path resolution steps (5) public API.
+
+**Likely probes:** `rm -rf` semantics? Thread safety of list while iterating?
+
+**30s closer:** Composite gives uniform operations; path logic isolated; cycles are explicit invariant checks.
+
+---
+
 ## Interview prompt
 
 Design an **in-memory** hierarchical file system supporting paths, directories, files with content, and operations like create, delete, move, read, list.
@@ -20,6 +42,20 @@ Design an **in-memory** hierarchical file system supporting paths, directories, 
 
 - **Correct path resolution** and cycle prevention for moves.
 - Reasonable **memory** representation for file bytes (byte arrays vs rope—keep simple unless asked).
+
+## Domain model
+
+| Kind | Type | Responsibility |
+|------|------|----------------|
+| **Composite node** | `Node` (interface) | Common operations: name, parent reference, optional size. |
+| **Entity** | `FileNode` | Holds bytes or stream handle; leaf in composite tree. |
+| **Aggregate root** | `DirectoryNode` | Child map `name → Node`; owns add/remove/move invariants. |
+| **Value object** | `Path` | Normalized absolute path segments; parsing and `..` rules. |
+| **Facade** | `FileSystem` | Public API: resolve path → delegate to root directory. |
+
+**Relationships:** `DirectoryNode` **composes** 0..N `Node` children; each `Node` has optional **parent** `DirectoryNode`.
+
+**Not modeled:** permissions ACL matrix, block device storage.
 
 ## Design patterns
 

@@ -1,5 +1,27 @@
 # LLD: Chess (or generic two-player board game)
 
+## Interview-ready snapshot
+
+**Say first (≈30s):** **`GameEngine`** runs validate → apply → side switch; **`MoveRule` / Strategy** per piece type; **board** is queried by rules; check detection via **simulation** on copy or dedicated service.
+
+**Default assumptions:** Full rules vs subset—ask immediately; undo optional via **Memento**.
+
+| Phase | ~Time | Deliver |
+|-------|------|---------|
+| Align | 5 min | Scope of checkmate; undo; Chess960 / variants. |
+| Model | 12 min | Game, Board, Piece, Move, rules, check detector. |
+| API + flow | 8 min | `applyMove` result type; illegal vs legal. |
+| Hard | 12 min | Pinned pieces; king safety; testing with board fixtures. |
+| Close | 5 min | AI as separate strategy outside core engine. |
+
+**Whiteboard order:** (1) core types (2) rule interface (3) one piece moves (e.g. rook) (4) check flow (5) engine pipeline.
+
+**Likely probes:** Where does castling live? En passant state? Immutable board?
+
+**30s closer:** Rules are pluggable; engine owns turn and terminal evaluation; representation separate from policy.
+
+---
+
 ## Interview prompt
 
 Design **chess**: two players, legal moves, check/checkmate/stalemate detection (scope varies), move history.
@@ -20,6 +42,21 @@ Design **chess**: two players, legal moves, check/checkmate/stalemate detection 
 
 - **Extensibility** for new piece types or variants (960 chess).
 - **Testability**: movement rules isolated from UI.
+
+## Domain model
+
+| Kind | Type | Responsibility |
+|------|------|----------------|
+| **Entity** | `Game` / `Match` | Turn side, move history, terminal state; orchestrates apply + validation. |
+| **Value object** | `Board` (immutable snapshot) or mutable with copy-on-write | Square occupancy map; queried by rules. |
+| **Entity** | `Piece` | Color, type, has-moved flags (castling/pawn double step). |
+| **Value object** | `Square`, `Move` | Positions; move is from-to + optional promotion piece. |
+| **Strategy / rule** | `MoveRule` / `PieceMovementStrategy` | Legality for a piece kind given board + context (including check). |
+| **Domain service** | `CheckDetector` | Simulates moves on a copy to see if king is attacked. |
+
+**Relationships:** `Game` **owns** current `Board` and **mutates** through validated `Move`s only.
+
+**Not modeled:** UI, clock, online pairing server.
 
 ## Design patterns
 

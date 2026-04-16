@@ -1,5 +1,27 @@
 # LLD: Splitwise-style expense splitting (simplified ledger)
 
+## Interview-ready snapshot
+
+**Say first (≈30s):** **Append-only** expenses → ledger lines; **Strategy** per split type; `BigDecimal` + explicit rounding; balances are **derived** or simplified in a pure service.
+
+**Default assumptions:** Single currency unless they say FX; immutability on posted expense.
+
+| Phase | ~Time | Deliver |
+|-------|------|---------|
+| Align | 5 min | Edit/delete policy; graph simplify in scope or not; multi-currency. |
+| Model | 12 min | Group, expense, postings/entries, Money VO, split calculator. |
+| API + flow | 8 min | Add expense + query balances; walk one “equal split” to lines. |
+| Hard | 10 min | Remainder cents rule; zero-sum invariant; concurrency per group. |
+| Close | 5 min | Double-entry vs pairwise; audit export. |
+
+**Whiteboard order:** (1) expense → N lines (2) split strategy interface (3) remainder rule (4) balance read path (5) optional simplifier.
+
+**Likely probes:** Rounding? Idempotent expense id? What if payer not in participants?
+
+**30s closer:** Domain is ledger facts + pure strategies; simplification stays out of entity mutation.
+
+---
+
 ## Interview prompt
 
 Design a system to **create expenses**, attach **splits** among users in a group, and query **balances** (“who owes whom”).
@@ -25,11 +47,20 @@ Design a system to **create expenses**, attach **splits** among users in a group
 
 ## Domain model
 
-- **Group**, **UserId** (value types).
-- **Expense**: immutable record; references **LedgerEntries** or contains derived splits.
-- **LedgerEntry**: `(groupId, from, to, amount, expenseId, type)` if you model pairwise deltas, **or** per-user postings if you model double-entry.
+| Kind | Type | Responsibility |
+|------|------|----------------|
+| **Value object** | `UserId`, `GroupId`, `Money` | Stable identity + decimal rules (`BigDecimal` + scale). |
+| **Aggregate root** | `Group` (optional) | Membership list; invariant “only members participate in expenses.” |
+| **Entity / event** | `Expense` | Immutable fact: payer, total, participants, split rule type + parameters, timestamp. |
+| **Value / entity** | `LedgerEntry` or `Posting` | Append-only lines caused by an expense (pairwise IOU **or** double-entry legs). |
+| **Domain service** | `SplitCalculator` (Strategy host) | Validates rule params and produces **zero-sum** set of lines for one expense. |
+| **Domain service** | `BalanceView` / `DebtSimplifier` | Derives net balances or simplified transfers from ledger (pure function over read model). |
 
-Staff-level tip: prefer **append-only ledger** + derived read model over silent mutation.
+**Relationships:** `Expense` **generates** many `LedgerEntry` rows (1:N). `Group` **has many** `Expense`s.
+
+Staff-level tip: prefer **append-only ledger** + derived read model over silent mutation of balances.
+
+**Not in core domain:** SQL dialect, message queue, notification on new expense.
 
 ## Design patterns
 
