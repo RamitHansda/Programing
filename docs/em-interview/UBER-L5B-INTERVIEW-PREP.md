@@ -406,6 +406,8 @@ Uber's systems can't use distributed 2PC (too slow, single point of failure). Yo
 
 ## Coding Practice List for L5B
 
+> **See also:** `UBER-C1-C2-QUESTIONS-BANK.md` — a compiled list of every confirmed question asked in C1 and C2 rounds, sourced from real 2024–2026 interview reports across all levels.
+
 | # | Problem | LC # | Pattern | L5B Priority |
 |---|---|---|---|---|
 | 1 | Network Delay Time | 743 | Dijkstra | MUST — routing |
