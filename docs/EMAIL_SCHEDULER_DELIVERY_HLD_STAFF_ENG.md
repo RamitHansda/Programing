@@ -180,7 +180,230 @@ We **never** materialize 10M rows in Postgres. Delivery rows are born in Cassand
 - Planner uses an RRULE library with a real TZ database to compute the next UTC instant. DST transitions are the library's problem, not ours.
 - Stretch: per-recipient timezone. This requires a row per `(run_id, tz_bucket)` and changes the model; I'd build it as a v2 add-on.
 
-## 6. Data Model
+### 5.8 Recurrence Lifecycle — Roll-forward, not pre-materialization
+
+This is the recurring-schedule story end-to-end.
+
+#### State model
+
+```
+schedules.status:     DRAFT → ACTIVE ⇄ PAUSED → ARCHIVED
+schedule_runs.status: SCHEDULED → DISPATCHING → FANNING_OUT → DELIVERING
+                                                            → COMPLETED
+                                                            → FAILED
+                                                            → SKIPPED (missed / concurrency-capped)
+                                                            → CANCELLED (edit / pause)
+```
+
+**Invariant:** for any `ACTIVE` schedule with `now < end_at`, exactly one `schedule_run` exists in state `SCHEDULED` (the next upcoming occurrence). Past runs are in terminal states. Lazy materialization, horizon = 1.
+
+#### Roll-forward mechanism — transactional, not cron
+
+When a worker flips `schedule_runs.status` to a **terminal** state, the same transaction rolls forward:
+
+```sql
+BEGIN;
+  UPDATE schedule_runs
+     SET status = 'COMPLETED', completed_at = now()
+   WHERE id = $1;
+
+  -- compute next occurrence (RRULE lib, handles DST)
+  INSERT INTO schedule_runs (
+    id, schedule_id, tenant_id,
+    scheduled_at, jittered_run_at,
+    bucket_minute, shard_id,
+    template_version, audience_snapshot_ref,
+    status
+  ) VALUES (
+    gen_random_uuid(), $schedule_id, $tenant_id,
+    $next_occurrence_utc, $next_occurrence_utc + jitter($schedule_id, $jitter_sec),
+    floor(extract(epoch from $next_occurrence_utc) / 60),
+    hash($schedule_id) % 256,
+    $template_version, $audience_snapshot_ref,
+    'SCHEDULED'
+  );
+
+  UPDATE schedules SET next_run_at = $next_occurrence_utc WHERE id = $schedule_id;
+COMMIT;
+```
+
+If the worker crashes between "run terminates" and "next run inserted," a **Planner reconciliation job** (every 1 min) catches it:
+
+```sql
+SELECT s.id FROM schedules s
+ WHERE s.status = 'ACTIVE'
+   AND (s.end_at IS NULL OR s.end_at > now())
+   AND NOT EXISTS (
+     SELECT 1 FROM schedule_runs r
+      WHERE r.schedule_id = s.id AND r.status = 'SCHEDULED'
+   );
+-- for each orphan: compute next occurrence, insert SCHEDULED row
+```
+
+Two-layer safety: **fast path is txn-local, slow path is reconciliation.**
+
+#### Why not pre-materialize the future?
+
+- RRULE can be "every minute forever" — **unbounded**.
+- Pre-materializing N runs ahead multiplies DB rows by N and complicates edits (you'd have to cancel and re-compute all N on every change).
+- Horizon = 1 is correct for correctness; a small UI-layer **cache** of the next ~7 occurrences is fine for "upcoming runs" queries, but it's a read-through cache, not the source of truth.
+
+#### Missed-run policy — per-schedule knob
+
+Planner was down, Monday 9am didn't fire. Policy is **per-schedule**, not global:
+
+| Policy | Behavior | Use case |
+|---|---|---|
+| `skip` (default) | Mark as `SKIPPED`, roll forward to next | Newsletters, marketing — no one wants two |
+| `fire_once` | Dispatch now, flagged `late=true` | Transactional digests, compliance reports |
+| `fire_all` | Replay every missed occurrence | Rare; financial close, audit logs |
+
+Implemented at the Dispatcher: when it claims a SCHEDULED row with `now - jittered_run_at > grace_window` (default 10 min), it consults `schedules.missed_run_policy` and either dispatches, marks SKIPPED + rolls forward, or generates back-dated runs.
+
+#### DST edge cases — pick a policy and document it
+
+Two cases the RRULE lib can't decide for us:
+
+| Case | Example | Our policy |
+|---|---|---|
+| **Skipped time** (spring-forward) | "2:30am LA" on March DST — doesn't exist | Advance to first valid instant (3:00am local) |
+| **Duplicated time** (fall-back) | "1:30am LA" on November DST — happens twice | Fire at the **first** (pre-transition) occurrence only |
+
+These are the right defaults for most recurring-email use cases. We expose no knob; it's documented behavior.
+
+#### Per-schedule concurrency cap
+
+Pathological: schedule is "every minute," but fan-out for a 10M audience takes 5 minutes. Without a cap, 5 runs stack up per schedule.
+
+- Add `max_concurrent_runs` to `schedules` (default: **1**).
+- Dispatcher, before claiming a SCHEDULED row, checks:
+
+  ```sql
+  SELECT count(*) FROM schedule_runs
+   WHERE schedule_id = $1
+     AND status IN ('DISPATCHING','FANNING_OUT','DELIVERING');
+  ```
+
+- If `>= max_concurrent_runs`: the new row is marked `SKIPPED` (with `reason = 'concurrency_cap'`) and roll-forward proceeds.
+
+#### Edit / pause / resume semantics on live recurrences
+
+| Action | Run currently SCHEDULED (not started) | Run currently in-flight |
+|---|---|---|
+| Edit RRULE / template / audience | Cancel SCHEDULED row; insert new one with next occurrence under new rules | In-flight run is **immutable** (template version pinned). Edit applies to next roll-forward. |
+| Pause | Cancel SCHEDULED row; `schedules.status = PAUSED` | Let it complete; no new roll-forward until resume |
+| Resume | Compute `nextOccurrence(rrule, tz, after=max(now, start_at))`; insert SCHEDULED row | — |
+| Reach `end_at` | Do not roll forward after current run terminates; `status = ARCHIVED` | — |
+| Delete | Cancel SCHEDULED row; `status = ARCHIVED` (soft). Keep `schedule_runs` history for audit | Let it complete |
+
+All of these are single transactions against `schedules` + `schedule_runs`.
+
+#### Schema additions for recurrence
+
+```sql
+ALTER TABLE schedules
+  ADD COLUMN missed_run_policy text    NOT NULL DEFAULT 'skip',   -- skip|fire_once|fire_all
+  ADD COLUMN grace_window_sec   int    NOT NULL DEFAULT 600,      -- 10 min
+  ADD COLUMN max_concurrent_runs int   NOT NULL DEFAULT 1;
+
+ALTER TABLE schedule_runs
+  ADD COLUMN skip_reason text,          -- 'concurrency_cap' | 'missed_window' | 'paused' | null
+  ADD COLUMN is_late boolean NOT NULL DEFAULT false;
+```
+
+#### Observability for recurring schedules
+
+- `schedule_run_interval_drift` = `scheduled_at(run_N+1) - scheduled_at(run_N) - expected_interval`. Non-zero on DST days (expected) or when reconciliation kicked in (investigate).
+- `skip_rate_per_schedule` — alert if a tenant's schedule is silently skipping due to concurrency cap.
+- Per-schedule "last 30 runs" UI query — trivial from `schedule_runs` since it's the instance log.
+
+## 6. Database Ownership
+
+### The principle: database-per-bounded-context, not database-per-microservice
+
+Strict database-per-microservice is dogma. What matters is the **bounded context**. Two services that need atomic writes to a shared aggregate belong on the same DB; two services that exchange identifiers belong on separate DBs.
+
+For this system:
+
+| Bounded context | Services in context | DB | Why grouped (or split) |
+|---|---|---|---|
+| **Scheduling kernel** | Schedule Service, Planner, Dispatcher | **`scheduling-pg`** (Postgres) | Roll-forward (§5.8) requires atomic txn over `schedules` + `schedule_runs`. Splitting forces a distributed transaction on every run completion — unacceptable. |
+| **Templates** | Template Service | **`templates-pg`** (Postgres) + S3 (content blobs) | Different access pattern (read-mostly, blob-backed), versioned independently. Schedule references by `(template_id, version)`. |
+| **Audiences** | Audience Service | **`audiences-pg`** (Postgres) + S3 (list snapshots) + federated reads to customer-data warehouse for segments | Segment queries may federate to a separate analytical DB (e.g. Snowflake / Redshift); we don't want that latency on the scheduling-kernel cluster. |
+| **Suppressions / compliance** | Suppression Service, Bounce Webhook Receiver | **`suppression-pg`** (Postgres) + Redis bloom filter | Hot path is the bloom filter (Redis); Postgres is source of truth. Independent retention policy (GDPR right-to-be-forgotten). |
+| **Delivery records** | Delivery Worker | **`deliveries-cassandra`** | 30M writes/day, append-mostly, key-only reads — wrong shape for Postgres. |
+| **Identity / multi-tenancy** | Tenant Service (cross-cutting) | **`identity-pg`** (Postgres) | Owns tenants, API keys, quotas, tier. Every other service holds a `tenant_id` reference; no foreign key. |
+
+**Cross-service references are by ID, never foreign key.** A `schedule_runs` row stores `template_id + template_version` and `audience_id`; resolution happens via the owning service's API. Values that must not change for the lifetime of the run (template version, audience snapshot ref) are **denormalized into the run row at creation time** so the in-flight run is self-contained.
+
+### Shared cluster vs. separate clusters
+
+Pragmatic position: **same Postgres cluster, separate logical databases**, until growth forces a peel-off.
+
+```
+Postgres cluster "control":
+  ├── scheduling-pg     (Schedule Service / Planner / Dispatcher)
+  ├── templates-pg      (Template Service)
+  ├── audiences-pg      (Audience Service)
+  ├── suppression-pg    (Suppression Service)
+  └── identity-pg       (Tenant Service)
+
+Cassandra cluster "deliveries":
+  └── deliveries        (Delivery Worker)
+
+Redis cluster "hot":
+  ├── idem:{run}:{user}             (Delivery Worker)
+  ├── rate:{tenant}                 (Fan-out Worker)
+  ├── suppress:bf:{tenant}          (Suppression Service writes; Delivery reads)
+  └── run:{run}:counters            (Delivery Worker)
+
+S3 buckets:
+  ├── templates/                    (Template Service)
+  └── audiences/                    (Audience Service)
+
+Kafka cluster "events":
+  ├── dispatch.requested            (Dispatcher → Fan-out)
+  ├── delivery.requested.high       (Fan-out → Delivery)
+  ├── delivery.requested.normal     (Fan-out → Delivery)
+  ├── delivery.outcome              (Delivery → analytics)
+  ├── bounce.received               (Bounce WH → Suppression)
+  └── *.dlq                         (DLQs per topic)
+```
+
+Why not separate Postgres clusters from day one? Operational tax: 5× more failover drills, 5× more tuning, 5× more on-call surface. Logical-database isolation gives us the schema-autonomy benefit (each service runs its own migrations, owns its own users/roles) without the ops cost. **Peel off when you must, not when you can.** Triggers to peel:
+- One service's I/O dominates the cluster
+- One service needs a different Postgres version
+- Compliance requires physical isolation (e.g., suppression in EU-only)
+
+### Cross-service consistency — outbox + event-driven
+
+The system never relies on a 2-phase commit. Two patterns instead:
+
+1. **Transactional outbox** (Schedule Service → Kafka): the API write to `schedules` and the publish-intent to Kafka happen in the **same Postgres transaction** by inserting into an `outbox` table. A separate publisher process tails the outbox and writes to Kafka with at-least-once semantics. This is how `schedule.created` and `schedule.updated` events reach downstream consumers (analytics, audit) reliably without distributed transactions.
+
+2. **Reference-and-resolve** (Schedule → Template / Audience): Schedule Service calls Template Service synchronously at run-creation time, retrieves `template_version` + `content_ref`, **denormalizes** them into the `schedule_run` row. The run never re-reads templates after that. Eliminates a class of "what if the template changed during fan-out" bugs.
+
+### Ownership matrix (who writes what)
+
+| Table / store | Write owner | Read by | Notes |
+|---|---|---|---|
+| `schedules` | Schedule Service | Schedule, Planner, Dispatcher | Edits go through the API only |
+| `schedule_runs` | Schedule Svc (insert), Planner (insert), Dispatcher (status), Workers (status) | All scheduling-kernel components | Roll-forward txn writes here too |
+| `outbox` (in scheduling-pg) | Schedule Service, Planner | Outbox publisher → Kafka | Cleared after publish |
+| `templates` | Template Service | Schedule, Delivery (via API) | Versioned, immutable per version |
+| `audiences` | Audience Service | Schedule, Fan-out (via API) | Static lists snapshot to S3 at run time |
+| `suppressions` | Suppression Service (from Bounce WH + manual) | Delivery (via Redis bloom + PG fallback) | Per-tenant, GDPR-relevant |
+| `deliveries` (Cassandra) | Delivery Worker | Delivery (retries), API (read-only views) | Idempotent upserts |
+| `tenants` (identity) | Tenant Service | All services (cached at API gateway) | API-key + quota source of truth |
+
+### What we deliberately do NOT do
+
+- **No shared schema across services in the same cluster.** Each service has its own logical DB, its own migration tool, its own connection pool, its own user. Cross-service `JOIN` is a code review failure.
+- **No cross-service foreign keys.** Always reference by ID. The owning service is the authority.
+- **No two-phase commit.** Outbox + at-least-once + idempotency wins every time at this scale.
+- **No "shared cache" for business data.** Redis namespaces per use case; never a free-for-all of arbitrary keys.
+
+## 7. Data Model
 
 ### Postgres (control plane, sharded by `tenant_id`)
 
@@ -248,7 +471,7 @@ deliveries (
 - `delivery.outcome` — for analytics consumers
 - `bounce.received` — from webhook ingress
 
-## 7. Failure Modes
+## 8. Failure Modes
 
 | Failure | Detection | Recovery |
 |---|---|---|
@@ -261,7 +484,7 @@ deliveries (
 | Kafka outage | Producer errors | Schedule service outbox keeps rows; dispatcher retries publish; no data loss |
 | Clock skew on dispatchers | NTP monitoring | Lease-based claim tolerates ±few seconds; larger skew alerts |
 
-## 8. Observability
+## 9. Observability
 
 **SLIs (per tenant + global):**
 
@@ -277,7 +500,7 @@ deliveries (
 
 **Audit log:** every schedule/run state transition + who/what triggered it. Indispensable for "why didn't my email send?"
 
-## 9. Rollout & Ops Concerns
+## 10. Rollout & Ops Concerns
 
 - Per-tenant **kill switch** via feature flag (refuse to fan-out for tenant X).
 - Per-tenant **send cap** (daily & per-second) enforced at API + fan-out.
@@ -286,7 +509,7 @@ deliveries (
 - Template preview + test-send-to-me endpoint (catches 90% of customer self-inflicted issues).
 - Compliance: unsubscribe link injection at render time, SPF/DKIM/DMARC configured per-tenant sending domain, GDPR data-residency via region-pinned deployments.
 
-## 10. What I'm Deliberately NOT Building
+## 11. What I'm Deliberately NOT Building
 
 Staff engineers say no.
 
@@ -296,7 +519,7 @@ Staff engineers say no.
 - **Per-recipient local timezone** — deferred to v2.
 - **Exactly-once delivery** — impossible over SMTP; don't oversell it.
 
-## 11. Why This Design Scales to 30M/day and Beyond
+## 12. Why This Design Scales to 30M/day and Beyond
 
 - **Every plane is horizontally scalable.** Control plane = stateless API + sharded Postgres. Dispatcher, fan-out, delivery = Kafka consumer groups.
 - **No single hot table scan.** Bucket + shard index keeps each dispatcher reading a narrow slice.
