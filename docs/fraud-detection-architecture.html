@@ -1,0 +1,697 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Real-Time Fraud Detection Pipeline</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: #0a0e1a;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 48px 24px 64px;
+      overflow-x: hidden;
+    }
+
+    /* ── Background stars ── */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background:
+        radial-gradient(ellipse 80% 50% at 50% -10%, rgba(99,102,241,.18) 0%, transparent 70%),
+        radial-gradient(ellipse 60% 40% at 80% 100%, rgba(236,72,153,.12) 0%, transparent 60%);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .page-wrap { position: relative; z-index: 1; width: 100%; max-width: 1280px; }
+
+    /* ── Header ── */
+    header {
+      text-align: center;
+      margin-bottom: 56px;
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(99,102,241,.15);
+      border: 1px solid rgba(99,102,241,.35);
+      border-radius: 999px;
+      padding: 5px 16px;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: .08em;
+      color: #a5b4fc;
+      text-transform: uppercase;
+      margin-bottom: 18px;
+    }
+    .badge::before { content: '●'; color: #6ee7b7; font-size: 8px; }
+    h1 {
+      font-size: clamp(28px, 4vw, 46px);
+      font-weight: 800;
+      line-height: 1.15;
+      color: #f1f5f9;
+      letter-spacing: -.02em;
+    }
+    h1 span {
+      background: linear-gradient(135deg, #818cf8 0%, #c084fc 50%, #f472b6 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .subtitle {
+      margin-top: 12px;
+      font-size: 15px;
+      color: #64748b;
+      font-weight: 400;
+    }
+
+    /* ── Diagram canvas ── */
+    .diagram {
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+      width: 100%;
+    }
+
+    /* ── Row layout ── */
+    .row {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0;
+      position: relative;
+    }
+    .row + .row { margin-top: 0; }
+
+    /* ── Connector arrows (horizontal) ── */
+    .arrow-h {
+      display: flex;
+      align-items: center;
+      flex-shrink: 0;
+      width: 52px;
+    }
+    .arrow-h .line {
+      flex: 1;
+      height: 2px;
+      background: linear-gradient(90deg, #334155, #6366f1);
+      position: relative;
+    }
+    .arrow-h .line.reverse { background: linear-gradient(90deg, #6366f1, #334155); }
+    .arrow-h .line::after {
+      content: '';
+      position: absolute;
+      right: -1px;
+      top: 50%;
+      transform: translateY(-50%);
+      border-left: 8px solid #6366f1;
+      border-top: 5px solid transparent;
+      border-bottom: 5px solid transparent;
+    }
+    .arrow-h .line.reverse::after { display: none; }
+    .arrow-h .line.reverse::before {
+      content: '';
+      position: absolute;
+      left: -1px;
+      top: 50%;
+      transform: translateY(-50%);
+      border-right: 8px solid #6366f1;
+      border-top: 5px solid transparent;
+      border-bottom: 5px solid transparent;
+    }
+
+    /* ── Vertical connector section ── */
+    .v-section {
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      margin: 0;
+      position: relative;
+      min-height: 70px;
+    }
+
+    /* ── Node card ── */
+    .node {
+      position: relative;
+      border-radius: 18px;
+      padding: 20px 22px;
+      min-width: 160px;
+      max-width: 200px;
+      text-align: center;
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      border: 1px solid rgba(255,255,255,.08);
+      transition: transform .25s ease, box-shadow .25s ease;
+      cursor: default;
+      flex-shrink: 0;
+    }
+    .node:hover {
+      transform: translateY(-4px) scale(1.025);
+    }
+
+    .node-icon {
+      font-size: 28px;
+      margin-bottom: 8px;
+      display: block;
+      line-height: 1;
+    }
+    .node-title {
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: .03em;
+      color: #f1f5f9;
+      line-height: 1.4;
+    }
+    .node-sub {
+      margin-top: 6px;
+      font-size: 10px;
+      font-weight: 400;
+      color: #94a3b8;
+      line-height: 1.5;
+    }
+    .node-tag {
+      display: inline-block;
+      margin-top: 8px;
+      background: rgba(0,0,0,.25);
+      border-radius: 999px;
+      padding: 2px 10px;
+      font-size: 9px;
+      font-weight: 600;
+      letter-spacing: .06em;
+      color: inherit;
+      text-transform: uppercase;
+    }
+
+    /* ── Node colour themes ── */
+    .node-blue {
+      background: linear-gradient(145deg, rgba(59,130,246,.22), rgba(37,99,235,.12));
+      box-shadow: 0 0 0 1px rgba(59,130,246,.25), 0 8px 32px rgba(59,130,246,.18);
+      color: #93c5fd;
+    }
+    .node-blue:hover { box-shadow: 0 0 0 1px rgba(59,130,246,.5), 0 16px 48px rgba(59,130,246,.3); }
+
+    .node-violet {
+      background: linear-gradient(145deg, rgba(139,92,246,.22), rgba(109,40,217,.12));
+      box-shadow: 0 0 0 1px rgba(139,92,246,.25), 0 8px 32px rgba(139,92,246,.18);
+      color: #c4b5fd;
+    }
+    .node-violet:hover { box-shadow: 0 0 0 1px rgba(139,92,246,.5), 0 16px 48px rgba(139,92,246,.3); }
+
+    .node-orange {
+      background: linear-gradient(145deg, rgba(249,115,22,.22), rgba(234,88,12,.12));
+      box-shadow: 0 0 0 1px rgba(249,115,22,.25), 0 8px 32px rgba(249,115,22,.18);
+      color: #fdba74;
+    }
+    .node-orange:hover { box-shadow: 0 0 0 1px rgba(249,115,22,.5), 0 16px 48px rgba(249,115,22,.3); }
+
+    .node-green {
+      background: linear-gradient(145deg, rgba(34,197,94,.22), rgba(22,163,74,.12));
+      box-shadow: 0 0 0 1px rgba(34,197,94,.25), 0 8px 32px rgba(34,197,94,.18);
+      color: #86efac;
+    }
+    .node-green:hover { box-shadow: 0 0 0 1px rgba(34,197,94,.5), 0 16px 48px rgba(34,197,94,.3); }
+
+    .node-red {
+      background: linear-gradient(145deg, rgba(239,68,68,.22), rgba(185,28,28,.12));
+      box-shadow: 0 0 0 1px rgba(239,68,68,.25), 0 8px 32px rgba(239,68,68,.18);
+      color: #fca5a5;
+    }
+    .node-red:hover { box-shadow: 0 0 0 1px rgba(239,68,68,.5), 0 16px 48px rgba(239,68,68,.3); }
+
+    .node-cyan {
+      background: linear-gradient(145deg, rgba(6,182,212,.22), rgba(8,145,178,.12));
+      box-shadow: 0 0 0 1px rgba(6,182,212,.25), 0 8px 32px rgba(6,182,212,.18);
+      color: #67e8f9;
+    }
+    .node-cyan:hover { box-shadow: 0 0 0 1px rgba(6,182,212,.5), 0 16px 48px rgba(6,182,212,.3); }
+
+    .node-pink {
+      background: linear-gradient(145deg, rgba(236,72,153,.22), rgba(190,24,93,.12));
+      box-shadow: 0 0 0 1px rgba(236,72,153,.25), 0 8px 32px rgba(236,72,153,.18);
+      color: #f9a8d4;
+    }
+    .node-pink:hover { box-shadow: 0 0 0 1px rgba(236,72,153,.5), 0 16px 48px rgba(236,72,153,.3); }
+
+    .node-amber {
+      background: linear-gradient(145deg, rgba(245,158,11,.22), rgba(217,119,6,.12));
+      box-shadow: 0 0 0 1px rgba(245,158,11,.25), 0 8px 32px rgba(245,158,11,.18);
+      color: #fcd34d;
+    }
+    .node-amber:hover { box-shadow: 0 0 0 1px rgba(245,158,11,.5), 0 16px 48px rgba(245,158,11,.3); }
+
+    /* ── Topic pill ── */
+    .topic {
+      border-radius: 12px;
+      padding: 14px 20px;
+      min-width: 180px;
+      max-width: 220px;
+      text-align: center;
+      flex-shrink: 0;
+    }
+    .topic-title {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: .05em;
+      text-transform: uppercase;
+    }
+    .topic-sub { font-size: 10px; margin-top: 3px; opacity: .7; }
+
+    .topic-kafka {
+      background: linear-gradient(135deg, rgba(234,88,12,.18), rgba(154,52,18,.12));
+      border: 1px solid rgba(234,88,12,.35);
+      color: #fb923c;
+      box-shadow: 0 4px 24px rgba(234,88,12,.15);
+    }
+
+    /* ── Vertical arrow ── */
+    .arrow-v-wrap {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      flex-shrink: 0;
+    }
+    .arrow-v {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .arrow-v .vline {
+      width: 2px;
+      background: linear-gradient(180deg, #334155, #6366f1);
+    }
+    .arrow-v .vline.down { background: linear-gradient(180deg, #6366f1, #334155); }
+    .arrow-v .vtip {
+      width: 0; height: 0;
+      border-left: 5px solid transparent;
+      border-right: 5px solid transparent;
+      border-top: 8px solid #6366f1;
+    }
+    .arrow-v .vtip.up {
+      border-top: none;
+      border-bottom: 8px solid #6366f1;
+    }
+    .arrow-label {
+      font-size: 9px;
+      font-weight: 600;
+      letter-spacing: .06em;
+      color: #475569;
+      text-transform: uppercase;
+      white-space: nowrap;
+      margin: 4px 0;
+      background: rgba(15,23,42,.6);
+      padding: 2px 8px;
+      border-radius: 999px;
+      border: 1px solid #1e293b;
+    }
+
+    /* ── SVG connector overlay (for the broadcast branch) ── */
+    .connector-svg {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      pointer-events: none;
+      overflow: visible;
+    }
+
+    /* ── Split section (broadcast row) ── */
+    .broadcast-row {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0;
+      position: relative;
+    }
+
+    /* ── Output fork ── */
+    .fork-row {
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+      gap: 32px;
+      position: relative;
+    }
+    .fork-branch {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0;
+    }
+
+    /* ── Section labels ── */
+    .section-label {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+      color: #334155;
+      margin-bottom: 20px;
+      text-align: center;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .section-label::before,
+    .section-label::after {
+      content: '';
+      flex: 1;
+      max-width: 80px;
+      height: 1px;
+      background: #1e293b;
+    }
+
+    /* ── Legend ── */
+    .legend {
+      margin-top: 52px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      justify-content: center;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(255,255,255,.03);
+      border: 1px solid rgba(255,255,255,.07);
+      border-radius: 10px;
+      padding: 8px 14px;
+    }
+    .legend-dot {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .legend-text { font-size: 11px; color: #64748b; font-weight: 500; }
+
+    /* ── Flow label on arrows ── */
+    .flow-label {
+      font-size: 9px;
+      font-weight: 600;
+      color: #475569;
+      letter-spacing: .05em;
+      text-transform: uppercase;
+      white-space: nowrap;
+      text-align: center;
+    }
+
+    /* ── Animated pulse on Flink node ── */
+    .pulse-ring {
+      position: absolute;
+      inset: -6px;
+      border-radius: 22px;
+      border: 2px solid rgba(139,92,246,.3);
+      animation: pulse 2.5s ease-out infinite;
+    }
+    @keyframes pulse {
+      0%   { opacity: 1; transform: scale(1); }
+      70%  { opacity: 0; transform: scale(1.12); }
+      100% { opacity: 0; transform: scale(1.12); }
+    }
+
+    /* ── Main layout grid ── */
+    .main-pipeline {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0;
+      position: relative;
+    }
+
+    /* Horizontal pipeline row */
+    .pipeline-row {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* The full layout */
+    .layout {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      grid-template-rows: auto auto auto auto auto auto;
+      column-gap: 0;
+      row-gap: 0;
+      width: 100%;
+      align-items: center;
+      justify-items: center;
+    }
+
+    .col-left   { grid-column: 1; }
+    .col-center { grid-column: 2; }
+    .col-right  { grid-column: 3; }
+
+    /* ── Responsive ── */
+    @media (max-width: 900px) {
+      .layout { grid-template-columns: 1fr; }
+      .col-left, .col-right { grid-column: 1; }
+    }
+  </style>
+</head>
+<body>
+<div class="page-wrap">
+
+  <!-- Header -->
+  <header>
+    <div class="badge">System Architecture</div>
+    <h1>Real-Time <span>Fraud Detection</span> Pipeline</h1>
+    <p class="subtitle">Event-driven · Apache Kafka · Apache Flink · DynamoDB</p>
+  </header>
+
+  <!-- ═══════════════════════════════════════════
+       DIAGRAM
+  ════════════════════════════════════════════ -->
+  <div class="diagram">
+
+    <!-- ─── ROW 1: Ingestion Layer ─── -->
+    <div class="section-label">Ingestion Layer</div>
+
+    <div class="row" style="margin-bottom:0;">
+
+      <!-- ALB -->
+      <div class="node node-blue">
+        <span class="node-icon">⚖️</span>
+        <div class="node-title">ALB</div>
+        <div class="node-sub">Application<br>Load Balancer</div>
+        <span class="node-tag" style="color:#93c5fd;">AWS</span>
+      </div>
+
+      <!-- arrow -->
+      <div class="arrow-h">
+        <div class="line"></div>
+      </div>
+
+      <!-- Ingestion Service -->
+      <div class="node node-cyan">
+        <span class="node-icon">🔀</span>
+        <div class="node-title">Ingestion Service</div>
+        <div class="node-sub">Stateless · Partition<br>by userId</div>
+        <span class="node-tag" style="color:#67e8f9;">Stateless</span>
+      </div>
+
+      <!-- arrow -->
+      <div class="arrow-h">
+        <div class="line"></div>
+      </div>
+
+      <!-- txn_kafka_topic -->
+      <div class="node topic topic-kafka">
+        <span class="node-icon">📨</span>
+        <div class="topic-title">txn_kafka_topic</div>
+        <div class="topic-sub">Partitioned · Ordered</div>
+      </div>
+
+    </div>
+
+    <!-- ─── DOWN ARROW from txn_kafka_topic to Flink ─── -->
+    <div style="display:flex; justify-content:center; margin: 0; padding: 0; position:relative;">
+      <!-- We need to offset to line up with kafka topic which is the 3rd item -->
+      <div style="display:flex; flex-direction:column; align-items:center; padding: 6px 0 6px;">
+        <div class="arrow-v">
+          <div class="vline" style="height:28px; background: linear-gradient(180deg,#ea580c,#6366f1);"></div>
+          <div class="vtip"></div>
+        </div>
+        <div class="arrow-label">consumed by</div>
+      </div>
+    </div>
+
+    <!-- ─── SECTION: Rule Engine (side injection) + Flink + Fraud Engine ─── -->
+    <div class="section-label">Stream Processing Layer</div>
+
+    <!-- Rule engine row feeds into Flink via broadcast -->
+    <div style="position:relative; display:flex; align-items:center; justify-content:center; gap:0; margin-bottom:0;">
+
+      <!-- Rule Engine side column -->
+      <div style="display:flex; flex-direction:column; align-items:center; margin-right:0;">
+
+        <div class="node node-amber" style="margin-bottom:0;">
+          <span class="node-icon">📋</span>
+          <div class="node-title">Txn Rule Engine</div>
+          <div class="node-sub">Analysts update<br>rules dynamically</div>
+          <span class="node-tag" style="color:#fcd34d;">Config</span>
+        </div>
+
+        <div class="arrow-v" style="padding: 4px 0;">
+          <div class="vline" style="height:24px; background: linear-gradient(180deg,#d97706,#f59e0b);"></div>
+          <div class="vtip" style="border-top-color:#f59e0b;"></div>
+        </div>
+
+        <div class="node topic topic-kafka" style="min-width:160px; max-width:180px;">
+          <span class="node-icon">📡</span>
+          <div class="topic-title">rule_update_topic</div>
+          <div class="topic-sub">Low-latency rules</div>
+        </div>
+
+        <div class="arrow-v" style="padding: 4px 0;">
+          <div class="vline" style="height:24px; background: linear-gradient(180deg,#ea580c,#6366f1);"></div>
+          <div class="vtip"></div>
+        </div>
+
+        <div class="node node-violet" style="min-width:160px;">
+          <span class="node-icon">📢</span>
+          <div class="node-title">Flink Broadcast<br>State</div>
+          <div class="node-sub">Dynamic rules<br>replicated to all</div>
+          <span class="node-tag" style="color:#c4b5fd;">Broadcast</span>
+        </div>
+
+      </div>
+
+      <!-- Horizontal arrow: Broadcast → Flink -->
+      <div class="arrow-h" style="width:44px;">
+        <div class="line"></div>
+      </div>
+
+      <!-- Flink Job (center star) -->
+      <div class="node node-violet" style="min-width:180px; padding:24px 22px; position:relative;">
+        <div class="pulse-ring"></div>
+        <span class="node-icon">⚡</span>
+        <div class="node-title" style="font-size:14px;">Flink Job</div>
+        <div class="node-sub">Keyed State: per user<br>Stateful stream processing</div>
+        <span class="node-tag" style="color:#c4b5fd;">Apache Flink</span>
+      </div>
+
+      <!-- Horizontal arrow: Flink → Fraud Engine -->
+      <div class="arrow-h" style="width:44px;">
+        <div class="line"></div>
+      </div>
+
+      <!-- Fraud Decision Engine -->
+      <div class="node node-red" style="min-width:180px;">
+        <span class="node-icon">🛡️</span>
+        <div class="node-title">Fraud Decision<br>Engine</div>
+        <div class="node-sub">Apply rules +<br>user state</div>
+        <span class="node-tag" style="color:#fca5a5;">Decision</span>
+      </div>
+
+    </div>
+
+    <!-- ─── DOWN ARROW from Fraud Engine to txn_fraud_result_topic ─── -->
+    <div style="display:flex; justify-content:flex-end; padding-right: calc(50% - 450px); margin:0;">
+      <div style="display:flex; flex-direction:column; align-items:center; padding: 6px 0 6px; margin-right: 90px;">
+        <div class="arrow-v">
+          <div class="vline" style="height:28px; background: linear-gradient(180deg,#ef4444,#6366f1);"></div>
+          <div class="vtip"></div>
+        </div>
+        <div class="arrow-label">fraud result</div>
+      </div>
+    </div>
+
+    <!-- ─── txn_fraud_result_topic ─── -->
+    <div class="section-label">Output Topic</div>
+
+    <div class="row" style="margin-bottom:0;">
+      <div class="node topic topic-kafka" style="min-width:210px;">
+        <span class="node-icon">🔔</span>
+        <div class="topic-title">txn_fraud_result_topic</div>
+        <div class="topic-sub">Fraud signals · Low latency</div>
+      </div>
+    </div>
+
+    <!-- ─── Fork arrows ─── -->
+    <div style="display:flex; justify-content:center; gap:160px; margin:0; padding: 4px 0;">
+      <!-- left fork -->
+      <div style="display:flex; flex-direction:column; align-items:center; padding: 6px 0 6px;">
+        <div class="arrow-v">
+          <div class="vline" style="height:28px; background: linear-gradient(180deg,#ea580c,#3b82f6);"></div>
+          <div class="vtip" style="border-top-color:#3b82f6;"></div>
+        </div>
+        <div class="arrow-label">process</div>
+      </div>
+      <!-- right fork -->
+      <div style="display:flex; flex-direction:column; align-items:center; padding: 6px 0 6px;">
+        <div class="arrow-v">
+          <div class="vline" style="height:28px; background: linear-gradient(180deg,#ea580c,#10b981);"></div>
+          <div class="vtip" style="border-top-color:#10b981;"></div>
+        </div>
+        <div class="arrow-label">audit</div>
+      </div>
+    </div>
+
+    <!-- ─── Output nodes ─── -->
+    <div class="section-label">Downstream Systems</div>
+
+    <div class="row" style="gap:80px;">
+
+      <!-- Txn Processing System -->
+      <div class="node node-blue" style="min-width:180px;">
+        <span class="node-icon">💳</span>
+        <div class="node-title">Txn Processing<br>System</div>
+        <div class="node-sub">Block / Allow<br>transactions</div>
+        <span class="node-tag" style="color:#93c5fd;">Action</span>
+      </div>
+
+      <!-- Event Audit System -->
+      <div class="node node-green" style="min-width:180px;">
+        <span class="node-icon">🗄️</span>
+        <div class="node-title">Event Audit<br>System</div>
+        <div class="node-sub">DynamoDB · Immutable<br>audit log</div>
+        <span class="node-tag" style="color:#86efac;">DynamoDB</span>
+      </div>
+
+    </div>
+
+  </div><!-- /.diagram -->
+
+  <!-- ─── Legend ─── -->
+  <div class="legend">
+    <div class="legend-item">
+      <div class="legend-dot" style="background:#3b82f6;"></div>
+      <div class="legend-text">AWS Infrastructure</div>
+    </div>
+    <div class="legend-item">
+      <div class="legend-dot" style="background:#06b6d4;"></div>
+      <div class="legend-text">Ingestion / API Layer</div>
+    </div>
+    <div class="legend-item">
+      <div class="legend-dot" style="background:#ea580c;"></div>
+      <div class="legend-text">Kafka Topics</div>
+    </div>
+    <div class="legend-item">
+      <div class="legend-dot" style="background:#8b5cf6;"></div>
+      <div class="legend-text">Flink Stream Processing</div>
+    </div>
+    <div class="legend-item">
+      <div class="legend-dot" style="background:#f59e0b;"></div>
+      <div class="legend-text">Rule Engine</div>
+    </div>
+    <div class="legend-item">
+      <div class="legend-dot" style="background:#ef4444;"></div>
+      <div class="legend-text">Fraud Decision</div>
+    </div>
+    <div class="legend-item">
+      <div class="legend-dot" style="background:#22c55e;"></div>
+      <div class="legend-text">Audit / Storage</div>
+    </div>
+  </div>
+
+</div><!-- /.page-wrap -->
+</body>
+</html>
