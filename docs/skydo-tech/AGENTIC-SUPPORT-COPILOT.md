@@ -1101,61 +1101,751 @@ async def send_response_to_crm(ticket_id: str, response: str, pii_map: dict):
 
 ## 13. Infrastructure & Deployment
 
-### AWS Architecture
+This section covers everything needed to run the system in production: architecture, containers, IaC, CI/CD pipeline, secrets, networking, scaling, persistence, health checks, and runbook.
+
+---
+
+### 13.1 Full AWS Architecture
 
 ```
-API Gateway
-    │
-    ▼
-Lambda (Ticket Ingestor)
-    │
-    ▼
-SQS Queue (ticket-processing)
-    │
-    ▼
-ECS Fargate (support-copilot-worker)
-    ├── LangGraph orchestrator
-    ├── Qdrant client
-    ├── Elasticsearch client
-    └── DynamoDB client (audit log + checkpoints)
+┌─────────────────────────────────────────────────────────────────────┐
+│                         AWS ap-south-1 VPC                          │
+│                                                                     │
+│  ┌──────────────┐     ┌──────────────────────────────────────────┐  │
+│  │  Internet    │     │  Private Subnet                          │  │
+│  │  Gateway     │     │                                          │  │
+│  └──────┬───────┘     │  ┌────────────────────────────────────┐ │  │
+│         │             │  │  ECS Fargate Cluster               │ │  │
+│  ┌──────▼───────┐     │  │                                    │ │  │
+│  │  API Gateway │     │  │  ┌──────────────────────────────┐  │ │  │
+│  │  (webhook    │     │  │  │  support-copilot-worker       │  │ │  │
+│  │   receiver)  │     │  │  │  (2–10 tasks, HPA)           │  │ │  │
+│  └──────┬───────┘     │  │  │                              │  │ │  │
+│         │             │  │  │  • LangGraph agent loop      │  │ │  │
+│  ┌──────▼───────┐     │  │  │  • Hybrid RAG retriever      │  │ │  │
+│  │  Lambda      │     │  │  │  • Tool executor             │  │ │  │
+│  │  (ingestor)  │     │  │  │  • Policy checker            │  │ │  │
+│  └──────┬───────┘     │  │  └──────────────────────────────┘  │ │  │
+│         │             │  │                                    │ │  │
+│  ┌──────▼───────┐     │  │  ┌──────────────────────────────┐  │ │  │
+│  │  SQS         │────▶│  │  │  support-copilot-api         │  │ │  │
+│  │  (ticket-    │     │  │  │  (FastAPI HITL endpoints)    │  │ │  │
+│  │   processing)│     │  │  └──────────────────────────────┘  │ │  │
+│  └──────────────┘     │  └────────────────────────────────────┘ │  │
+│                       │                                          │  │
+│                       │  ┌─────────────────────────────────┐    │  │
+│                       │  │  Data Layer                     │    │  │
+│                       │  │                                 │    │  │
+│                       │  │  PostgreSQL (RDS)               │    │  │
+│                       │  │   └── LangGraph checkpoints     │    │  │
+│                       │  │                                 │    │  │
+│                       │  │  DynamoDB                       │    │  │
+│                       │  │   └── Audit log (append-only)   │    │  │
+│                       │  │                                 │    │  │
+│                       │  │  AWS OpenSearch                 │    │  │
+│                       │  │   └── BM25 keyword search       │    │  │
+│                       │  │                                 │    │  │
+│                       │  │  Qdrant (ECS, single-node)      │    │  │
+│                       │  │   └── Vector search             │    │  │
+│                       │  │                                 │    │  │
+│                       │  │  ElastiCache Redis              │    │  │
+│                       │  │   └── Semantic response cache   │    │  │
+│                       │  │                                 │    │  │
+│                       │  │  S3                             │    │  │
+│                       │  │   └── Policy docs + model artefacts  │  │
+│                       │  └─────────────────────────────────┘    │  │
+│                       └──────────────────────────────────────────┘  │
+│                                                                     │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │  Shared Services                                            │   │
+│  │  Secrets Manager → API keys   CloudWatch → metrics/alerts  │   │
+│  │  ECR → container images       Langfuse (ECS) → LLM traces  │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────────┘
 
-Qdrant  ← ECS Fargate or EC2 (self-hosted, inside VPC)
-Elasticsearch ← AWS OpenSearch Service
-DynamoDB ← audit log + LangGraph checkpoints
-S3 ← policy document store
-Secrets Manager ← OpenAI API key, internal API key
-CloudWatch ← metrics, alerts (SLA breach rate, auto-resolve rate)
-Retool ← HITL dashboard (connects to FastAPI /hitl/* endpoints)
+External:
+  Retool dashboard  →  FastAPI /hitl/* (via VPC Link + NLB)
+  Freshdesk/Zendesk →  API Gateway webhook
+  OpenAI API        →  outbound (NAT Gateway)
+  Internal APIs     →  VPC-internal (no internet egress)
 ```
 
-### Docker for the worker
+---
+
+### 13.2 Container Setup
+
+**Two containers are deployed:**
+
+| Container | Purpose | Port |
+|---|---|---|
+| `support-copilot-worker` | SQS consumer, runs LangGraph agent | internal only |
+| `support-copilot-api` | FastAPI server for HITL endpoints | 8080 |
+
+#### Worker Dockerfile
 
 ```dockerfile
+FROM python:3.11-slim AS builder
+
+WORKDIR /build
+COPY requirements.txt .
+RUN pip install --no-cache-dir --target=/deps -r requirements.txt
+
 FROM python:3.11-slim
 
 WORKDIR /app
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY --from=builder /deps /deps
+ENV PYTHONPATH=/app:/deps
 
 COPY src/ ./src/
-ENV PYTHONPATH=/app
+
+# Non-root user for security
+RUN useradd -m -u 1000 copilot
+USER copilot
 
 CMD ["python", "-m", "src.worker"]
 ```
 
-### Key environment variables
+#### API Dockerfile
+
+```dockerfile
+FROM python:3.11-slim AS builder
+
+WORKDIR /build
+COPY requirements.txt .
+RUN pip install --no-cache-dir --target=/deps -r requirements.txt
+
+FROM python:3.11-slim
+
+WORKDIR /app
+COPY --from=builder /deps /deps
+ENV PYTHONPATH=/app:/deps
+
+COPY src/ ./src/
+
+RUN useradd -m -u 1000 copilot
+USER copilot
+
+EXPOSE 8080
+CMD ["uvicorn", "src.hitl.api:app", "--host", "0.0.0.0", "--port", "8080", "--workers", "4"]
+```
+
+#### Health check endpoint (added to FastAPI)
+
+```python
+# src/hitl/api.py
+@app.get("/health")
+async def health():
+    """ECS health check target."""
+    return {"status": "ok"}
+
+@app.get("/ready")
+async def readiness():
+    """Checks downstream dependencies before marking task ready."""
+    checks = {}
+    try:
+        qdrant.get_collection(COLLECTION_NAME)
+        checks["qdrant"] = "ok"
+    except Exception as e:
+        checks["qdrant"] = f"error: {e}"
+
+    try:
+        db_conn = await get_pg_connection()
+        await db_conn.execute("SELECT 1")
+        checks["postgres"] = "ok"
+    except Exception as e:
+        checks["postgres"] = f"error: {e}"
+
+    all_ok = all(v == "ok" for v in checks.values())
+    return JSONResponse(
+        content={"status": "ready" if all_ok else "degraded", "checks": checks},
+        status_code=200 if all_ok else 503,
+    )
+```
+
+#### Worker startup (SQS consumer)
+
+```python
+# src/worker.py
+import asyncio
+import boto3
+import json
+import logging
+from src.ingest.pii import mask_pii
+from src.ingest.normalizer import NormalizedTicket
+from src.agent.graph import run_ticket
+
+logger = logging.getLogger(__name__)
+sqs = boto3.client("sqs", region_name="ap-south-1")
+QUEUE_URL = "https://sqs.ap-south-1.amazonaws.com/123456789/ticket-processing"
+
+async def process_message(msg: dict):
+    body = json.loads(msg["Body"])
+    ticket = NormalizedTicket(**body)
+    result = await run_ticket(ticket)
+    logger.info("ticket_processed", extra={"ticket_id": ticket.ticket_id, "status": result["status"]})
+
+async def poll_loop():
+    logger.info("Worker started, polling SQS...")
+    while True:
+        response = sqs.receive_message(
+            QueueUrl=QUEUE_URL,
+            MaxNumberOfMessages=5,       # process up to 5 tickets concurrently
+            WaitTimeSeconds=20,          # long polling — reduces empty receives
+            VisibilityTimeout=300,       # 5 min; enough for a full agent run
+        )
+        messages = response.get("Messages", [])
+        if not messages:
+            continue
+
+        tasks = [process_message(m) for m in messages]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        for msg, result in zip(messages, results):
+            if isinstance(result, Exception):
+                logger.error("message_failed", extra={"error": str(result), "msg_id": msg["MessageId"]})
+                # Do NOT delete — message returns to queue after VisibilityTimeout
+            else:
+                sqs.delete_message(QueueUrl=QUEUE_URL, ReceiptHandle=msg["ReceiptHandle"])
+
+if __name__ == "__main__":
+    asyncio.run(poll_loop())
+```
+
+---
+
+### 13.3 LangGraph Checkpointer — PostgreSQL (Production)
+
+`MemorySaver` is in-memory only — it cannot survive a container restart or scale across multiple worker tasks. In production, use `AsyncPostgresSaver`.
+
+```python
+# src/agent/graph.py
+import os
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+import asyncpg
+
+POSTGRES_DSN = os.environ["POSTGRES_DSN"]
+# e.g. postgresql://user:pass@rds-host:5432/copilot_db
+
+async def build_support_agent_prod():
+    """Call once at worker startup; reuse the app across all ticket runs."""
+    conn = await asyncpg.connect(POSTGRES_DSN)
+    checkpointer = AsyncPostgresSaver(conn)
+    await checkpointer.setup()   # creates checkpoint tables if they don't exist
+
+    graph = StateGraph(SupportAgentState)
+    # ... (same nodes and edges as before) ...
+    
+    return graph.compile(
+        checkpointer=checkpointer,
+        interrupt_before=["human_review"],
+    )
+```
+
+**Why PostgreSQL for checkpoints:**
+- HITL pause can last hours (human agent is offline). The state must persist across restarts.
+- Multiple worker tasks can all read/write the same checkpoint store.
+- RDS PostgreSQL is already inside the VPC — no extra network hop.
+- `thread_id = ticket_id` makes lookups O(1) by primary key.
+
+**RDS table created by `checkpointer.setup()`:**
+
+```
+checkpoints          — one row per (thread_id, checkpoint_id)
+checkpoint_blobs     — binary state payloads
+checkpoint_writes    — pending write queue
+```
+
+---
+
+### 13.4 Terraform Infrastructure-as-Code
+
+Key resources. Each module lives in `infra/modules/`.
+
+#### SQS Queue
+
+```hcl
+# infra/modules/sqs/main.tf
+resource "aws_sqs_queue" "ticket_processing" {
+  name                       = "ticket-processing"
+  visibility_timeout_seconds = 300      # must match worker VisibilityTimeout
+  message_retention_seconds  = 86400    # 24 hours
+  receive_wait_time_seconds  = 20       # long polling
+
+  redrive_policy = jsonencode({
+    deadLetterTargetArn = aws_sqs_queue.ticket_dlq.arn
+    maxReceiveCount     = 3             # after 3 failures → DLQ
+  })
+}
+
+resource "aws_sqs_queue" "ticket_dlq" {
+  name                      = "ticket-processing-dlq"
+  message_retention_seconds = 1209600   # 14 days; time to investigate
+}
+
+# CloudWatch alarm: alert if DLQ depth > 0
+resource "aws_cloudwatch_metric_alarm" "dlq_alarm" {
+  alarm_name          = "ticket-dlq-non-empty"
+  metric_name         = "ApproximateNumberOfMessagesVisible"
+  namespace           = "AWS/SQS"
+  statistic           = "Sum"
+  period              = 60
+  evaluation_periods  = 1
+  threshold           = 1
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+  dimensions          = { QueueName = aws_sqs_queue.ticket_dlq.name }
+  alarm_actions       = [aws_sns_topic.alerts.arn]
+}
+```
+
+#### ECS Fargate — Worker Task Definition
+
+```hcl
+# infra/modules/ecs/worker.tf
+resource "aws_ecs_task_definition" "worker" {
+  family                   = "support-copilot-worker"
+  requires_compatibilities = ["FARGATE"]
+  network_mode             = "awsvpc"
+  cpu                      = "1024"    # 1 vCPU
+  memory                   = "2048"   # 2 GB
+
+  task_role_arn      = aws_iam_role.worker_task_role.arn
+  execution_role_arn = aws_iam_role.ecs_execution_role.arn
+
+  container_definitions = jsonencode([{
+    name      = "worker"
+    image     = "${aws_ecr_repository.copilot.repository_url}:${var.image_tag}"
+    essential = true
+
+    environment = [
+      { name = "QDRANT_HOST",                value = "qdrant.internal" },
+      { name = "QDRANT_PORT",                value = "6333" },
+      { name = "ES_HOST",                    value = "https://opensearch.internal" },
+      { name = "DYNAMODB_TABLE",             value = "support-copilot-audit" },
+      { name = "AUTO_RESOLVE_CONFIDENCE",    value = "0.85" },
+      { name = "MAX_TOOL_CALLS",             value = "6" },
+    ]
+
+    secrets = [
+      { name = "OPENAI_API_KEY",    valueFrom = aws_secretsmanager_secret.openai_key.arn },
+      { name = "INTERNAL_API_KEY",  valueFrom = aws_secretsmanager_secret.internal_key.arn },
+      { name = "POSTGRES_DSN",      valueFrom = aws_secretsmanager_secret.postgres_dsn.arn },
+      { name = "LANGFUSE_SECRET_KEY", valueFrom = aws_secretsmanager_secret.langfuse.arn },
+    ]
+
+    logConfiguration = {
+      logDriver = "awslogs"
+      options   = {
+        "awslogs-group"         = "/ecs/support-copilot-worker"
+        "awslogs-region"        = "ap-south-1"
+        "awslogs-stream-prefix" = "worker"
+      }
+    }
+  }])
+}
+
+resource "aws_ecs_service" "worker" {
+  name            = "support-copilot-worker"
+  cluster         = aws_ecs_cluster.main.id
+  task_definition = aws_ecs_task_definition.worker.arn
+  desired_count   = 2
+  launch_type     = "FARGATE"
+
+  network_configuration {
+    subnets          = var.private_subnet_ids
+    security_groups  = [aws_security_group.worker_sg.id]
+    assign_public_ip = false
+  }
+
+  # Auto-scaling based on SQS queue depth
+  lifecycle {
+    ignore_changes = [desired_count]
+  }
+}
+
+# Auto Scaling: scale out when queue depth > 50, scale in when < 10
+resource "aws_appautoscaling_target" "worker" {
+  max_capacity       = 10
+  min_capacity       = 2
+  resource_id        = "service/${aws_ecs_cluster.main.name}/${aws_ecs_service.worker.name}"
+  scalable_dimension = "ecs:service:DesiredCount"
+  service_namespace  = "ecs"
+}
+
+resource "aws_appautoscaling_policy" "worker_scale_out" {
+  name               = "worker-scale-out"
+  policy_type        = "StepScaling"
+  resource_id        = aws_appautoscaling_target.worker.resource_id
+  scalable_dimension = aws_appautoscaling_target.worker.scalable_dimension
+  service_namespace  = aws_appautoscaling_target.worker.service_namespace
+
+  step_scaling_policy_configuration {
+    adjustment_type         = "ChangeInCapacity"
+    cooldown                = 60
+    metric_aggregation_type = "Maximum"
+
+    step_adjustment {
+      metric_interval_lower_bound = 0
+      metric_interval_upper_bound = 100
+      scaling_adjustment          = 2
+    }
+    step_adjustment {
+      metric_interval_lower_bound = 100
+      scaling_adjustment          = 4
+    }
+  }
+}
+```
+
+#### IAM — Least-Privilege Worker Role
+
+```hcl
+# infra/modules/iam/worker_role.tf
+resource "aws_iam_role_policy" "worker_policy" {
+  name = "support-copilot-worker"
+  role = aws_iam_role.worker_task_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        # SQS: consume from ticket queue only
+        Effect   = "Allow"
+        Action   = ["sqs:ReceiveMessage", "sqs:DeleteMessage", "sqs:GetQueueAttributes"]
+        Resource = aws_sqs_queue.ticket_processing.arn
+      },
+      {
+        # DynamoDB: write audit log only (no reads, no deletes)
+        Effect   = "Allow"
+        Action   = ["dynamodb:PutItem", "dynamodb:BatchWriteItem"]
+        Resource = aws_dynamodb_table.audit_log.arn
+      },
+      {
+        # Secrets Manager: read-only, specific secrets
+        Effect   = "Allow"
+        Action   = ["secretsmanager:GetSecretValue"]
+        Resource = [
+          aws_secretsmanager_secret.openai_key.arn,
+          aws_secretsmanager_secret.internal_key.arn,
+          aws_secretsmanager_secret.postgres_dsn.arn,
+          aws_secretsmanager_secret.langfuse.arn,
+        ]
+      },
+      {
+        # S3: read policy documents only
+        Effect   = "Allow"
+        Action   = ["s3:GetObject"]
+        Resource = "${aws_s3_bucket.policy_docs.arn}/*"
+      },
+    ]
+  })
+}
+```
+
+---
+
+### 13.5 CI/CD Pipeline (GitHub Actions)
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│  GitHub Actions Pipeline                                            │
+│                                                                     │
+│  on: push to main                                                   │
+│                                                                     │
+│  Job 1: test                                                        │
+│    pytest tests/ --cov=src --cov-fail-under=80                      │
+│    ruff check src/                                                  │
+│    Run golden-set eval (fail if accuracy drops > 5%)               │
+│                                                                     │
+│  Job 2: build (needs: test)                                         │
+│    docker build -t worker -f Dockerfile.worker .                    │
+│    docker build -t api    -f Dockerfile.api .                       │
+│    Push both images to ECR with SHA tag                             │
+│                                                                     │
+│  Job 3: deploy-staging (needs: build)                               │
+│    terraform apply -var image_tag=$SHA -target=module.ecs_staging   │
+│    Smoke test: POST test ticket → assert auto-resolved in < 60s     │
+│                                                                     │
+│  Job 4: deploy-prod (needs: deploy-staging, manual approval)        │
+│    terraform apply -var image_tag=$SHA -target=module.ecs_prod      │
+│    Rolling update: ECS replaces tasks one at a time                 │
+│    Verify: CloudWatch auto-resolve rate ≥ baseline for 5 min        │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+```yaml
+# .github/workflows/deploy.yml
+name: Deploy Support Copilot
+
+on:
+  push:
+    branches: [main]
+
+env:
+  AWS_REGION: ap-south-1
+  ECR_REGISTRY: 123456789.dkr.ecr.ap-south-1.amazonaws.com
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - run: pip install -r requirements.txt
+      - run: pytest tests/ --cov=src --cov-fail-under=80
+      - run: ruff check src/
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    outputs:
+      image_tag: ${{ steps.tag.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: tag
+        run: echo "sha=${GITHUB_SHA::8}" >> $GITHUB_OUTPUT
+      - name: Login to ECR
+        run: aws ecr get-login-password | docker login --username AWS --password-stdin $ECR_REGISTRY
+      - name: Build and push worker
+        run: |
+          docker build -f Dockerfile.worker -t $ECR_REGISTRY/copilot-worker:${{ steps.tag.outputs.sha }} .
+          docker push $ECR_REGISTRY/copilot-worker:${{ steps.tag.outputs.sha }}
+      - name: Build and push API
+        run: |
+          docker build -f Dockerfile.api -t $ECR_REGISTRY/copilot-api:${{ steps.tag.outputs.sha }} .
+          docker push $ECR_REGISTRY/copilot-api:${{ steps.tag.outputs.sha }}
+
+  deploy-staging:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          cd infra
+          terraform init
+          terraform apply -auto-approve \
+            -var="image_tag=${{ needs.build.outputs.image_tag }}" \
+            -var="environment=staging"
+      - name: Smoke test
+        run: python scripts/smoke_test.py --env staging --timeout 60
+
+  deploy-prod:
+    needs: deploy-staging
+    runs-on: ubuntu-latest
+    environment: production    # requires manual approval in GitHub Environments
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          cd infra
+          terraform apply -auto-approve \
+            -var="image_tag=${{ needs.build.outputs.image_tag }}" \
+            -var="environment=production"
+```
+
+---
+
+### 13.6 Secrets Management
+
+All secrets live in AWS Secrets Manager. They are injected as environment variables into the ECS task at startup — **never** baked into container images or passed through environment config files.
+
+```
+Secret Name                    Used By
+─────────────────────────────────────────────────────────
+/copilot/prod/openai-api-key   worker, api
+/copilot/prod/internal-api-key worker
+/copilot/prod/postgres-dsn     worker (checkpointer), api
+/copilot/prod/langfuse-secret  worker, api
+/copilot/prod/freshdesk-key    lambda (ingestor)
+```
+
+Rotation policy:
+- OpenAI key: manual rotation every 90 days (no built-in AWS rotation available)
+- Internal API key: automated rotation via Lambda every 30 days
+- PostgreSQL DSN: RDS password rotation every 30 days via Secrets Manager native rotation
+
+---
+
+### 13.7 Networking & Security
+
+```
+Security Group: worker-sg
+  Inbound:  NONE (worker is outbound-only; SQS uses VPC endpoint)
+  Outbound: 443 → NAT Gateway (OpenAI API, Langfuse)
+            6333 → Qdrant SG (vector DB)
+            443  → OpenSearch SG (BM25)
+            5432 → RDS SG (PostgreSQL checkpoints)
+            443  → DynamoDB VPC Endpoint
+            443  → S3 VPC Endpoint
+            443  → SQS VPC Endpoint
+            443  → Secrets Manager VPC Endpoint
+
+Security Group: api-sg
+  Inbound:  443 → NLB SG (HITL dashboard traffic)
+  Outbound: 5432 → RDS SG
+            443  → DynamoDB VPC Endpoint
+
+VPC Endpoints (private, no internet traffic):
+  S3, DynamoDB, SQS, Secrets Manager, ECR, CloudWatch Logs
+```
+
+Key security decisions:
+- Worker has **no inbound ports** — it only reads from SQS and writes to internal services.
+- All AWS API calls (S3, DynamoDB, SQS) go through VPC endpoints — never over the public internet.
+- The only external egress is to OpenAI (via NAT Gateway) — this is the only traffic that leaves the VPC.
+- Internal APIs are accessed within the VPC — no internet hop.
+
+---
+
+### 13.8 Scaling Model
+
+| Signal | Action |
+|---|---|
+| SQS `ApproximateNumberOfMessagesVisible` > 50 | Scale out ECS worker +2 tasks |
+| SQS `ApproximateNumberOfMessagesVisible` > 150 | Scale out ECS worker +4 tasks |
+| SQS `ApproximateNumberOfMessagesVisible` < 10 for 5 min | Scale in ECS worker −1 task (floor: 2) |
+| OpenAI rate limit 429 response | Exponential backoff (1s, 2s, 4s, 8s); SQS visibility timeout acts as natural backpressure |
+| Qdrant / OpenSearch degraded | Worker continues without RAG context; logs `rag_degraded` event; alert fires |
+
+SQS `VisibilityTimeout = 300s` means if a worker task crashes mid-processing, the message automatically becomes visible again after 5 minutes and is retried by another task. After 3 failures, the message goes to the DLQ for manual investigation.
+
+---
+
+### 13.9 Observability Stack
+
+```
+Logs      → CloudWatch Logs  (structured JSON, queryable with Logs Insights)
+Metrics   → CloudWatch Metrics (auto-resolve rate, p50 latency, policy failures)
+Traces    → Langfuse (every LLM call + tool call with token counts, cost, latency)
+Alerts    → CloudWatch Alarms → SNS → PagerDuty / Slack
+
+Key dashboards:
+  1. Real-time ticket throughput (tickets/min by route)
+  2. Auto-resolve rate (rolling 1h / 24h / 7d)
+  3. First-response time p50 / p95
+  4. LLM cost per ticket
+  5. DLQ depth (should always be 0)
+  6. Policy check failure rate
+  7. HITL queue depth (number of tickets waiting for human review)
+```
+
+```python
+# src/observability.py — structured logging helper
+import logging
+import json
+
+class StructuredLogger:
+    def __init__(self, name: str):
+        self.logger = logging.getLogger(name)
+
+    def info(self, event: str, **kwargs):
+        self.logger.info(json.dumps({"event": event, **kwargs}))
+
+    def error(self, event: str, **kwargs):
+        self.logger.error(json.dumps({"event": event, **kwargs}))
+
+logger = StructuredLogger("copilot")
+
+# Usage in worker
+logger.info("ticket_processed",
+    ticket_id=ticket.ticket_id,
+    intent=triage.intent,
+    route=route,
+    latency_ms=elapsed,
+    tool_calls=result["tool_call_count"],
+    auto_resolved=bool(result.get("final_response")),
+)
+```
+
+---
+
+### 13.10 Key Environment Variables
 
 ```bash
-OPENAI_API_KEY=...
-INTERNAL_API_KEY=...
+# LLM + external services
+OPENAI_API_KEY=...            # from Secrets Manager
+INTERNAL_API_KEY=...          # from Secrets Manager
+
+# Persistence
+POSTGRES_DSN=postgresql://... # LangGraph checkpoints (from Secrets Manager)
+DYNAMODB_TABLE=support-copilot-audit
+
+# Vector + keyword search
 QDRANT_HOST=qdrant.internal
 QDRANT_PORT=6333
 ES_HOST=https://opensearch.internal:443
-DYNAMODB_TABLE=support-copilot-audit
+
+# Observability
 LANGFUSE_SECRET_KEY=...
 LANGFUSE_PUBLIC_KEY=...
+LANGFUSE_HOST=https://langfuse.internal
+
+# Agent behaviour (tunable without redeploy via SSM Parameter Store)
 AUTO_RESOLVE_CONFIDENCE=0.85
 MAX_TOOL_CALLS=6
+ALWAYS_HUMAN_INTENTS=refund_request,compliance_query,escalation_request
+```
+
+`AUTO_RESOLVE_CONFIDENCE` and `MAX_TOOL_CALLS` are read from AWS SSM Parameter Store at startup, not baked into the image. This allows tuning thresholds without a redeploy.
+
+---
+
+### 13.11 Deployment Runbook
+
+**Standard deploy (new code):**
+```
+1. Merge PR to main
+2. GitHub Actions runs tests + golden-set eval automatically
+3. Builds new Docker images, pushes to ECR with SHA tag
+4. Auto-deploys to staging
+5. Smoke test runs (POST 3 test tickets, assert resolved < 60s)
+6. Requires manual approval in GitHub Environments to proceed to prod
+7. ECS rolling update: drains old tasks one at a time, brings up new ones
+8. Monitor CloudWatch auto-resolve rate for 10 min — rollback if drops > 10%
+```
+
+**Rollback:**
+```bash
+# ECS rollback to previous task definition revision
+aws ecs update-service \
+  --cluster support-copilot \
+  --service support-copilot-worker \
+  --task-definition support-copilot-worker:PREV_REVISION \
+  --region ap-south-1
+```
+
+**Knowledge base update (new policies):**
+```bash
+# Upload new policy doc to S3
+aws s3 cp new_policy.pdf s3://skydo-policy-docs/
+
+# Re-index into Qdrant + OpenSearch (idempotent — upserts by doc_id)
+python scripts/index_policies.py --source s3://skydo-policy-docs/new_policy.pdf
+
+# No service restart needed; next ticket retrieval picks up new vectors immediately
+```
+
+**Threshold tuning (no redeploy needed):**
+```bash
+# Raise auto-resolve confidence threshold (more conservative)
+aws ssm put-parameter \
+  --name /copilot/prod/auto-resolve-confidence \
+  --value 0.90 \
+  --type String \
+  --overwrite
+
+# Worker reads this at next poll cycle (within 60s)
+```
+
+**Emergency: disable auto-send completely:**
+```bash
+# Set threshold to 1.01 (impossibly high → all tickets go to human)
+aws ssm put-parameter \
+  --name /copilot/prod/auto-resolve-confidence \
+  --value 1.01 \
+  --type String \
+  --overwrite
+# No restart needed; takes effect within 60s
 ```
 
 ---
