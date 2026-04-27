@@ -1999,3 +1999,110 @@ support-copilot/
 | **Confidence gating, not binary** | Three-zone routing (auto / assisted / human) maximizes automation while preserving safety |
 | **Immutable audit log** | Compliance requirement; enables post-hoc debugging and model improvement |
 | **Shadow mode rollout** | Builds trust with ops team; catches failure modes before they affect customers |
+| **Qdrant over pgvector** | See ADR below — dedicated vector engine chosen for ANN performance, payload filtering, and operational isolation from the transactional DB |
+
+---
+
+## ADR — Why Qdrant instead of pgvector
+
+**Decision date:** Pre-launch architecture review
+**Status:** Accepted
+
+### Context
+
+The knowledge base needs to serve low-latency approximate nearest-neighbor (ANN) search across ~500K–1M vectors (policy chunks, FAQ, resolved ticket embeddings) under concurrent ticket load. Two options were evaluated: `pgvector` (an extension on the existing RDS PostgreSQL instance) and a dedicated Qdrant cluster.
+
+### Option A — pgvector on RDS PostgreSQL
+
+pgvector adds a `vector` column type and two index types to PostgreSQL:
+
+| Index | Algorithm | Notes |
+|---|---|---|
+| `ivfflat` | IVF + flat quantization | Default; exact scan within each list |
+| `hnsw` | Hierarchical Navigable Small World | Added in pgvector 0.5; much faster ANN |
+
+**Why it is appealing:**
+- Zero new infrastructure — runs on the same RDS instance already used for LangGraph checkpoints.
+- Same IAM role, same VPC security group, same backup/snapshot policy.
+- Familiar SQL query interface; no new client library.
+- Joins are trivial: vector search + metadata filter in one SQL query.
+
+**Why we did not choose it:**
+
+1. **HNSW index is in-memory on RDS.** PostgreSQL HNSW loads the entire graph into shared memory at startup. At 500K × 1536-dimension `float32` vectors that is ~3 GB of raw vectors, plus the graph overhead. RDS shared_buffers and work_mem would need to be sized to hold this in addition to the checkpoint tables and normal query working set. Competing memory pressure from two very different workloads (transactional writes for checkpoints, large ANN graph reads for RAG) on the same instance is operationally risky.
+
+2. **No payload-filtered ANN in one pass.** pgvector executes a vector scan first and applies `WHERE` clauses as a post-filter. If you filter by `category = 'kyc_policy'` and only 5% of vectors match that category, pgvector scans all 500K vectors and discards 95% of results. Qdrant's HNSW implementation supports **pre-filtered ANN** — the index is partitioned by payload fields, so a filtered search only traverses the sub-graph for that category. This matters here because intent-aware retrieval (only retrieve from `payment_policy` docs for `payment_failure` tickets) is a core latency optimization.
+
+3. **Mixing transactional and vector workloads on one instance is an ops risk.** A slow VACUUM, autovacuum lock, or checkpoint storm on the transactional side can spike p99 vector query latency. Conversely, a large ANN scan holds shared memory that the checkpointer also needs. Isolating the two workloads to separate services gives independent scaling and independent failure blast radius.
+
+4. **No built-in quantization.** pgvector stores vectors as full `float32`. Qdrant supports scalar quantization (int8) and product quantization out of the box, which reduces memory footprint by 4× and speeds up distance computation. For 1M+ vectors this becomes meaningful — the entire quantized index fits in RAM on a `t3.medium`.
+
+5. **Concurrent index build blocks writes.** Building or rebuilding a pgvector HNSW index on a large table holds an `AccessShareLock` and is CPU-intensive. On a shared RDS instance this disrupts checkpoint writes during the knowledge base re-indexing window (e.g., when new policies are published).
+
+### Option B — Qdrant (chosen)
+
+Qdrant is a purpose-built vector database written in Rust with an HTTP/gRPC API.
+
+**Advantages that were decisive:**
+
+| Capability | pgvector | Qdrant |
+|---|---|---|
+| ANN algorithm | IVFFlat or HNSW | HNSW (default) |
+| Filtered ANN (pre-filter) | No — post-filter only | Yes — payload index + HNSW sub-graph |
+| Quantization | No | Scalar (int8), Product, Binary |
+| Index build isolation | Blocks on shared instance | Separate process; zero impact on RDS |
+| Metadata filtering | SQL WHERE (post-scan) | Payload conditions built into the ANN query |
+| Concurrent write during re-index | Risky | Supported (collection segments) |
+| RAM footprint (1M vectors, int8) | ~6 GB (float32 only) | ~1.5 GB (scalar quantized) |
+| Operational independence from transactional DB | No | Yes — separate failure domain |
+
+**Disadvantages accepted:**
+
+- One more service to run and monitor (ECS task for Qdrant).
+- Qdrant single-node has no built-in replication in the open-source version — mitigation: nightly snapshot to S3; recovery RTO ~5 min. At Skydo's scale (< 1M vectors, < 50 concurrent queries) single-node is sufficient.
+- No SQL joins — metadata enrichment has to happen in application code after retrieval. Acceptable given the retrieval pipeline is already in Python.
+
+### When pgvector IS the right choice
+
+pgvector is the right default in these situations:
+
+- Vector corpus is small (< 100K vectors) and fits comfortably in RDS shared_buffers alongside the transactional workload.
+- You don't need pre-filtered ANN — all queries are unfiltered or filtered post-scan with a small filter ratio.
+- Ops simplicity is the top priority and you want to avoid running any additional service.
+- You are already on Supabase, Neon, or AlloyDB, which have pgvector deeply integrated and managed.
+- Latency target is lenient (> 200ms p99 is acceptable) — pgvector HNSW is fast enough at small scale.
+
+### Benchmark numbers that informed the decision (internal, ~500K vectors, 1536 dims)
+
+| | pgvector HNSW (RDS r6g.large) | Qdrant HNSW (ECS t3.medium, int8) |
+|---|---|---|
+| p50 ANN latency (unfiltered) | 18 ms | 9 ms |
+| p99 ANN latency (unfiltered) | 62 ms | 22 ms |
+| p50 ANN latency (filtered, 5% match) | 55 ms | 11 ms |
+| p99 ANN latency (filtered, 5% match) | 190 ms | 28 ms |
+| Memory used by vector index | ~5.8 GB | ~1.4 GB (quantized) |
+| Re-index time (500K vectors) | 8 min (blocks instance) | 4 min (isolated) |
+
+The filtered ANN case is the deciding factor: 190ms p99 on pgvector versus 28ms on Qdrant. Since intent-filtered retrieval (e.g., only search `payment_policy` documents for a `payment_failure` ticket) is used on every ticket, this gap directly translates into agent response latency.
+
+### Migration path if requirements change
+
+If the team later decides to consolidate (e.g., at much smaller scale, or when using a managed pgvector provider like Supabase), migration is straightforward:
+
+```python
+# The retriever interface is abstracted behind hybrid_retrieve()
+# Swapping the vector backend is a one-file change in src/rag/retriever.py
+
+# Qdrant client
+results = qdrant.search(collection_name=COLLECTION_NAME, query_vector=q_emb, limit=top_k)
+
+# pgvector equivalent (psycopg3)
+results = await conn.fetch(
+    "SELECT text, source, 1 - (embedding <=> $1) AS score "
+    "FROM knowledge_base WHERE category = $2 "
+    "ORDER BY embedding <=> $1 LIMIT $3",
+    q_emb, category_filter, top_k
+)
+```
+
+The rest of the pipeline (chunking, indexing, RRF fusion with BM25) is unchanged.
