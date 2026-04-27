@@ -25,6 +25,42 @@ Adapt the last sentence for each company.
 
 ---
 
+## "Give Me 3 Reasons to Hire You" — Your Pre-Built Answer
+
+This question appears in multiple forms: *"Why should we hire you?", "What makes you the right person for this role?", "What do you bring that others don't?"* It is usually the last meaningful question before the interview closes. A vague answer at this point undoes everything good that came before it.
+
+**Your answer — deliver it in this exact sequence. No notes. Under 90 seconds.**
+
+---
+
+> "Three reasons, specifically.
+>
+> **First: I have shipped production systems at the scale you need, and I can do it again.**
+> At Goldman Sachs I led market risk infrastructure processing petabyte-scale market data in real time — promoted to VP in under 2 years. At Skydo I designed and scaled a cross-border payments platform handling 10,000+ transactions a day with strict idempotency, reconciliation, and fault-tolerance guarantees. I'm not a leader who has drifted from the technical reality. I can sit with your engineers, understand the actual architecture, and make calls that are grounded — not just directional.
+>
+> **Second: I have run the full engineering function, not just a team within it.**
+> At Skydo I was the Engineering Manager, the CIO, the hiring bar, the culture, and the technical strategy simultaneously. I led ISO 27001 and SOC 2 Type II certifications. I rolled out GenAI tooling across the org. I owned the oncall. Most candidates for a Head of Engineering role have done parts of this — I've done all of it in one role, under real pressure, at a company where there was no one above me to escalate to.
+>
+> **Third: I build teams that outlast my involvement.**
+> I mentored 8 engineers directly at Skydo. I built the interview process, the engineering culture, the post-incident review practice. When I left, the team didn't lose momentum — because the systems, the practices, and the people were built to operate without me. That's what a Head of Engineering should leave behind: a team that's better than when they arrived, independent of whether the leader stays."
+
+---
+
+**If they ask you to name just one:**
+
+> "The combination of hands-on technical depth and full-org leadership scope in a single person. Most candidates give you one or the other. I give you both, with a track record at every level from IISc research to Goldman VP to Skydo CIO."
+
+**What this answer does:**
+
+| What they worry about | What your answer shows |
+|---|---|
+| "Is this person still technical?" | Goldman VP + Skydo architecture + specific systems named |
+| "Have they actually run a full eng function?" | CIO + ISO 27001 + hiring + culture — not just delivery |
+| "Will they leave the team dependent on them?" | Mentored 8 directly; built practices, not just products |
+| "Are they confident or arrogant?" | Specific, evidence-backed, forward-looking — not self-congratulatory |
+
+---
+
 ## The Head of Engineering Interview — What Actually Gets Tested
 
 Unlike EM interviews that probe execution and people management, Head of Engineering interviews probe **strategic leverage**:
