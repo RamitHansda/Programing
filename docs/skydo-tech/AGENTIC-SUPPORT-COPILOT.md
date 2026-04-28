@@ -289,70 +289,596 @@ def route_ticket(triage: TriageResult) -> str:
 
 ## 5. Component 3 — Hybrid RAG Knowledge Base
 
-The knowledge base covers: policy documents, FAQ, past resolved tickets, product documentation, and error code references.
+The knowledge base covers: policy documents (PDF/Markdown), FAQ sheets, past resolved tickets, product documentation, and error code references.
 
-### Document Indexing Pipeline
+---
+
+### 5.1 How Documents Get Into the Vector DB — Full Pipeline
+
+```
+Source documents (S3 / local files)
+        │
+        ▼
+  [Step 1: Load & extract text]
+   PDF → pdfplumber   Markdown → direct   CSV/FAQ → row-per-chunk
+        │
+        ▼
+  [Step 2: Clean]
+   strip headers/footers, normalise whitespace, remove boilerplate
+        │
+        ▼
+  [Step 3: Chunk]
+   sliding window (512 words, 64 overlap) OR
+   section-aware (split on ## headings for Markdown/policy docs)
+        │
+        ▼
+  [Step 4: Embed]
+   OpenAI text-embedding-3-small  →  1536-dim float32 vector per chunk
+   batched: up to 2048 chunks per API call
+        │
+        ├──────────────────────────────────────┐
+        ▼                                      ▼
+  [Step 5a: Upsert into Qdrant]        [Step 5b: Index into Elasticsearch]
+   PointStruct(id, vector, payload)     es.index(id, {text, metadata})
+   payload = {text, doc_id, category,   BM25 for exact keyword search
+              source, version, chunk_i}
+        │                                      │
+        └──────────────────┬───────────────────┘
+                           ▼
+                   [Step 6: Verify]
+                    spot-check: query "test phrase" → confirm chunk returned
+```
+
+---
+
+### 5.2 One-Time Collection Setup
+
+Run this once before any indexing. It creates the Qdrant collection with scalar quantization (reduces memory 4×) and the Elasticsearch index with proper text analysis.
 
 ```python
-import hashlib
+# scripts/setup_kb.py
+import os
 from qdrant_client import QdrantClient
-from qdrant_client.models import VectorParams, Distance, PointStruct, Filter, FieldCondition, MatchValue
-from openai import OpenAI
+from qdrant_client.models import (
+    VectorParams, Distance,
+    ScalarQuantizationConfig, ScalarType, QuantizationConfig,
+    ScalarQuantization,
+)
 from elasticsearch import Elasticsearch
 
-openai_client = OpenAI()
-qdrant = QdrantClient(host="localhost", port=6333)
-es = Elasticsearch("http://localhost:9200")
+qdrant = QdrantClient(host=os.environ["QDRANT_HOST"], port=int(os.environ["QDRANT_PORT"]))
+es = Elasticsearch(os.environ["ES_HOST"])
 
 COLLECTION_NAME = "support_kb"
-EMBED_MODEL = "text-embedding-3-small"
 EMBED_DIM = 1536
 
-def ensure_collection():
-    if not qdrant.collection_exists(COLLECTION_NAME):
-        qdrant.create_collection(
-            collection_name=COLLECTION_NAME,
-            vectors_config=VectorParams(size=EMBED_DIM, distance=Distance.COSINE),
-        )
+def setup_qdrant():
+    if qdrant.collection_exists(COLLECTION_NAME):
+        print(f"Collection '{COLLECTION_NAME}' already exists — skipping.")
+        return
 
-def chunk_document(text: str, chunk_size: int = 512, overlap: int = 64) -> list[str]:
-    """Sliding window chunker with token-level overlap awareness."""
+    qdrant.create_collection(
+        collection_name=COLLECTION_NAME,
+        vectors_config=VectorParams(
+            size=EMBED_DIM,
+            distance=Distance.COSINE,
+        ),
+        # Scalar quantization: store vectors as int8 instead of float32
+        # 4× memory reduction; <5% accuracy loss on support domain
+        quantization_config=QuantizationConfig(
+            scalar=ScalarQuantization(
+                scalar=ScalarQuantizationConfig(
+                    type=ScalarType.INT8,
+                    always_ram=True,    # keep quantized index in RAM for fast ANN
+                )
+            )
+        ),
+    )
+
+    # Create payload indexes for fast filtered ANN
+    # These allow Qdrant to do pre-filtered search rather than post-filter
+    qdrant.create_payload_index(COLLECTION_NAME, "category",   "keyword")
+    qdrant.create_payload_index(COLLECTION_NAME, "doc_id",     "keyword")
+    qdrant.create_payload_index(COLLECTION_NAME, "language",   "keyword")
+    qdrant.create_payload_index(COLLECTION_NAME, "version",    "keyword")
+
+    print(f"Qdrant collection '{COLLECTION_NAME}' created with int8 quantization.")
+
+def setup_elasticsearch():
+    if es.indices.exists(index=COLLECTION_NAME):
+        print(f"ES index '{COLLECTION_NAME}' already exists — skipping.")
+        return
+
+    es.indices.create(
+        index=COLLECTION_NAME,
+        body={
+            "settings": {
+                "number_of_shards": 1,
+                "number_of_replicas": 1,
+                "analysis": {
+                    "analyzer": {
+                        "support_analyzer": {
+                            "type": "custom",
+                            "tokenizer": "standard",
+                            "filter": ["lowercase", "stop", "stemmer_english"],
+                        }
+                    },
+                    "filter": {
+                        "stemmer_english": {"type": "stemmer", "language": "english"}
+                    },
+                },
+            },
+            "mappings": {
+                "properties": {
+                    "text":        {"type": "text", "analyzer": "support_analyzer"},
+                    "doc_id":      {"type": "keyword"},
+                    "category":    {"type": "keyword"},
+                    "source":      {"type": "keyword"},
+                    "version":     {"type": "keyword"},
+                    "language":    {"type": "keyword"},
+                    "chunk_index": {"type": "integer"},
+                }
+            },
+        },
+    )
+    print(f"Elasticsearch index '{COLLECTION_NAME}' created.")
+
+if __name__ == "__main__":
+    setup_qdrant()
+    setup_elasticsearch()
+```
+
+---
+
+### 5.3 Text Extraction by Document Type
+
+Different source formats need different loaders before chunking.
+
+```python
+# src/rag/loaders.py
+import re
+import pdfplumber
+import csv
+import boto3
+from pathlib import Path
+from dataclasses import dataclass
+
+@dataclass
+class RawDocument:
+    doc_id: str
+    text: str
+    category: str       # payment_policy | kyc_policy | faq | resolved_ticket | error_codes
+    source: str         # filename or S3 key
+    language: str = "en"
+    version: str = "latest"
+
+# ── PDF loader (policy documents) ──────────────────────────────────────────────
+def load_pdf(path: str, doc_id: str, category: str) -> RawDocument:
+    text_parts = []
+    with pdfplumber.open(path) as pdf:
+        for page in pdf.pages:
+            page_text = page.extract_text()
+            if page_text:
+                text_parts.append(page_text)
+
+    full_text = "\n\n".join(text_parts)
+    full_text = _clean_text(full_text)
+    return RawDocument(doc_id=doc_id, text=full_text, category=category, source=path)
+
+# ── Markdown loader (product docs, SOPs) ───────────────────────────────────────
+def load_markdown(path: str, doc_id: str, category: str) -> RawDocument:
+    with open(path, "r", encoding="utf-8") as f:
+        text = f.read()
+    text = _clean_text(text)
+    return RawDocument(doc_id=doc_id, text=text, category=category, source=path)
+
+# ── CSV/FAQ loader (one row = one Q&A pair) ────────────────────────────────────
+def load_faq_csv(path: str) -> list[RawDocument]:
+    docs = []
+    with open(path, newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for i, row in enumerate(reader):
+            # CSV columns: question, answer, category
+            text = f"Q: {row['question']}\nA: {row['answer']}"
+            docs.append(RawDocument(
+                doc_id=f"faq-{i}",
+                text=_clean_text(text),
+                category=row.get("category", "faq"),
+                source=path,
+            ))
+    return docs
+
+# ── Resolved ticket loader (historical support data) ───────────────────────────
+def load_resolved_tickets(tickets: list[dict]) -> list[RawDocument]:
+    """
+    tickets: list of {"ticket_id": "...", "issue": "...", "resolution": "..."}
+    Resolved tickets teach the agent what good responses look like for recurring issues.
+    """
+    docs = []
+    for t in tickets:
+        text = (
+            f"Customer issue: {t['issue']}\n"
+            f"Resolution: {t['resolution']}"
+        )
+        docs.append(RawDocument(
+            doc_id=f"resolved-{t['ticket_id']}",
+            text=_clean_text(text),
+            category="resolved_ticket",
+            source="crm_export",
+        ))
+    return docs
+
+# ── S3 loader (download then dispatch to correct loader) ───────────────────────
+def load_from_s3(s3_key: str, doc_id: str, category: str) -> RawDocument:
+    s3 = boto3.client("s3")
+    local_path = f"/tmp/{Path(s3_key).name}"
+    s3.download_file("skydo-policy-docs", s3_key, local_path)
+
+    if s3_key.endswith(".pdf"):
+        return load_pdf(local_path, doc_id, category)
+    elif s3_key.endswith(".md"):
+        return load_markdown(local_path, doc_id, category)
+    else:
+        raise ValueError(f"Unsupported file type: {s3_key}")
+
+# ── Shared text cleaner ────────────────────────────────────────────────────────
+def _clean_text(text: str) -> str:
+    text = re.sub(r"\n{3,}", "\n\n", text)        # collapse 3+ blank lines to 2
+    text = re.sub(r"[ \t]+", " ", text)            # collapse multiple spaces/tabs
+    text = re.sub(r"-{3,}", "", text)              # remove horizontal rules
+    text = text.strip()
+    return text
+```
+
+---
+
+### 5.4 Chunking Strategies
+
+Two strategies are used depending on document type.
+
+```python
+# src/rag/chunker.py
+from dataclasses import dataclass
+import re
+
+@dataclass
+class Chunk:
+    text: str
+    chunk_index: int
+    heading: str = ""   # populated for section-aware chunks
+
+# ── Strategy 1: Sliding window (for tickets, FAQ, short docs) ─────────────────
+def sliding_window_chunks(
+    text: str,
+    chunk_size: int = 512,   # in words
+    overlap: int = 64,
+) -> list[Chunk]:
     words = text.split()
     chunks = []
     step = chunk_size - overlap
+
     for i in range(0, len(words), step):
-        chunk = " ".join(words[i : i + chunk_size])
-        if chunk:
-            chunks.append(chunk)
+        chunk_words = words[i : i + chunk_size]
+        if len(chunk_words) < 20:   # skip tiny trailing chunks
+            break
+        chunks.append(Chunk(text=" ".join(chunk_words), chunk_index=len(chunks)))
+
     return chunks
 
-def index_document(doc_id: str, text: str, metadata: dict):
-    """Index into both Qdrant (vector) and Elasticsearch (keyword)."""
-    chunks = chunk_document(text)
-    embeddings = openai_client.embeddings.create(
-        model=EMBED_MODEL,
-        input=chunks,
-    ).data
+# ── Strategy 2: Section-aware (for policy PDFs and Markdown docs) ─────────────
+def section_aware_chunks(
+    text: str,
+    max_chunk_size: int = 600,  # in words
+) -> list[Chunk]:
+    """
+    Split on Markdown headings (## or ###) or PDF section markers (ALL CAPS lines).
+    Each section becomes one or more chunks.
+    Good for policy docs where each section has a distinct meaning — you want the
+    whole section to stay together rather than being split mid-paragraph.
+    """
+    # Split on ## headings OR ALL CAPS lines (common in PDFs)
+    section_pattern = re.compile(r"(?=^#{1,3}\s|\n[A-Z][A-Z\s]{10,}\n)", re.MULTILINE)
+    sections = section_pattern.split(text)
 
-    # Vector index (Qdrant)
-    points = []
-    for i, (chunk, emb_obj) in enumerate(zip(chunks, embeddings)):
-        chunk_id = hashlib.md5(f"{doc_id}-{i}".encode()).hexdigest()
-        points.append(PointStruct(
-            id=chunk_id,
-            vector=emb_obj.embedding,
-            payload={**metadata, "text": chunk, "doc_id": doc_id, "chunk_index": i},
-        ))
-    qdrant.upsert(collection_name=COLLECTION_NAME, points=points)
+    chunks = []
+    heading = ""
+    for section in sections:
+        section = section.strip()
+        if not section:
+            continue
 
-    # Keyword index (Elasticsearch)
-    for i, chunk in enumerate(chunks):
-        es.index(
-            index="support_kb",
-            id=f"{doc_id}-{i}",
-            body={"text": chunk, "doc_id": doc_id, **metadata},
-        )
+        # Extract heading from first line if it looks like one
+        lines = section.split("\n", 1)
+        first_line = lines[0].strip()
+        if re.match(r"^#{1,3}\s", first_line) or first_line.isupper():
+            heading = first_line.lstrip("#").strip()
+            section = lines[1].strip() if len(lines) > 1 else ""
+
+        if not section:
+            continue
+
+        words = section.split()
+        if len(words) <= max_chunk_size:
+            # Whole section fits in one chunk — keep it together
+            chunks.append(Chunk(
+                text=f"{heading}\n{section}" if heading else section,
+                chunk_index=len(chunks),
+                heading=heading,
+            ))
+        else:
+            # Section is too long — slide within it
+            sub_chunks = sliding_window_chunks(section, chunk_size=max_chunk_size, overlap=50)
+            for sc in sub_chunks:
+                chunks.append(Chunk(
+                    text=f"{heading}\n{sc.text}" if heading else sc.text,
+                    chunk_index=len(chunks),
+                    heading=heading,
+                ))
+
+    return chunks
+
+def chunk_document(doc, strategy: str = "auto") -> list[Chunk]:
+    """Pick strategy based on category if not specified."""
+    if strategy == "auto":
+        if doc.category in ("payment_policy", "kyc_policy", "product_doc"):
+            strategy = "section"
+        else:
+            strategy = "sliding"
+
+    if strategy == "section":
+        return section_aware_chunks(doc.text)
+    return sliding_window_chunks(doc.text)
 ```
+
+---
+
+### 5.5 Embedding + Upsert into Qdrant and Elasticsearch
+
+```python
+# src/rag/indexer.py
+import hashlib
+import os
+from openai import OpenAI
+from qdrant_client import QdrantClient
+from qdrant_client.models import PointStruct
+from elasticsearch import Elasticsearch
+from elasticsearch.helpers import bulk
+
+from src.rag.loaders import RawDocument
+from src.rag.chunker import chunk_document, Chunk
+
+openai_client = OpenAI()
+qdrant       = QdrantClient(host=os.environ["QDRANT_HOST"], port=int(os.environ["QDRANT_PORT"]))
+es           = Elasticsearch(os.environ["ES_HOST"])
+
+COLLECTION_NAME = "support_kb"
+EMBED_MODEL     = "text-embedding-3-small"
+BATCH_SIZE      = 100   # OpenAI allows up to 2048 inputs per call; 100 is safe
+
+
+def _stable_id(doc_id: str, chunk_index: int) -> str:
+    """
+    Deterministic chunk ID so re-indexing the same doc upserts (overwrites)
+    rather than creating duplicate points.
+    """
+    return hashlib.md5(f"{doc_id}::{chunk_index}".encode()).hexdigest()
+
+
+def _embed_batch(texts: list[str]) -> list[list[float]]:
+    """Embed up to BATCH_SIZE texts in one API call."""
+    response = openai_client.embeddings.create(model=EMBED_MODEL, input=texts)
+    return [item.embedding for item in response.data]
+
+
+def index_document(doc: RawDocument):
+    """
+    Full pipeline for one document:
+    1. Chunk  2. Embed  3. Upsert Qdrant  4. Bulk index Elasticsearch
+    """
+    chunks: list[Chunk] = chunk_document(doc)
+    print(f"  → {doc.doc_id}: {len(chunks)} chunks")
+
+    # Process in batches to stay within OpenAI rate limits
+    for batch_start in range(0, len(chunks), BATCH_SIZE):
+        batch = chunks[batch_start : batch_start + BATCH_SIZE]
+        texts = [c.text for c in batch]
+
+        embeddings = _embed_batch(texts)
+
+        # ── Qdrant upsert ──────────────────────────────────────────────────────
+        points = []
+        for chunk, vector in zip(batch, embeddings):
+            chunk_id = _stable_id(doc.doc_id, chunk.chunk_index)
+            points.append(PointStruct(
+                id=chunk_id,
+                vector=vector,
+                payload={
+                    "text":        chunk.text,
+                    "heading":     chunk.heading,
+                    "doc_id":      doc.doc_id,
+                    "chunk_index": chunk.chunk_index,
+                    "category":    doc.category,
+                    "source":      doc.source,
+                    "language":    doc.language,
+                    "version":     doc.version,
+                },
+            ))
+        qdrant.upsert(collection_name=COLLECTION_NAME, points=points)
+
+        # ── Elasticsearch bulk index ───────────────────────────────────────────
+        es_actions = []
+        for chunk in batch:
+            chunk_id = _stable_id(doc.doc_id, chunk.chunk_index)
+            es_actions.append({
+                "_index": COLLECTION_NAME,
+                "_id":    chunk_id,        # same ID as Qdrant — makes cross-referencing easy
+                "_source": {
+                    "text":        chunk.text,
+                    "heading":     chunk.heading,
+                    "doc_id":      doc.doc_id,
+                    "chunk_index": chunk.chunk_index,
+                    "category":    doc.category,
+                    "source":      doc.source,
+                    "language":    doc.language,
+                    "version":     doc.version,
+                },
+            })
+        bulk(es, es_actions)
+
+    print(f"  ✓ {doc.doc_id} indexed into Qdrant + Elasticsearch")
+
+
+def delete_document(doc_id: str):
+    """
+    Remove all chunks for a document (e.g. when a policy is superseded).
+    Uses the payload filter — no need to track chunk IDs externally.
+    """
+    from qdrant_client.models import Filter, FieldCondition, MatchValue
+    qdrant.delete(
+        collection_name=COLLECTION_NAME,
+        points_selector=Filter(
+            must=[FieldCondition(key="doc_id", match=MatchValue(value=doc_id))]
+        ),
+    )
+    es.delete_by_query(
+        index=COLLECTION_NAME,
+        body={"query": {"term": {"doc_id": doc_id}}},
+    )
+    print(f"  ✓ {doc_id} deleted from Qdrant + Elasticsearch")
+```
+
+---
+
+### 5.6 Bulk Indexing Script (run once or on policy updates)
+
+```python
+# scripts/index_policies.py
+"""
+Usage:
+  python scripts/index_policies.py                    # index everything in S3
+  python scripts/index_policies.py --doc kyc_v3.pdf   # re-index one doc
+  python scripts/index_policies.py --delete kyc_v2    # remove old version
+"""
+import argparse
+import boto3
+from src.rag.loaders import load_from_s3, load_faq_csv, load_resolved_tickets
+from src.rag.indexer import index_document, delete_document
+
+S3_BUCKET    = "skydo-policy-docs"
+FAQ_CSV_PATH = "data/faq.csv"
+
+# Document registry — maps S3 key → (doc_id, category)
+POLICY_DOCS = [
+    ("policies/payment_policy_v4.pdf",   "payment-policy-v4",   "payment_policy"),
+    ("policies/kyc_policy_v3.pdf",       "kyc-policy-v3",       "kyc_policy"),
+    ("policies/refund_policy_v2.pdf",    "refund-policy-v2",    "payment_policy"),
+    ("docs/fx_rate_explainer.md",        "fx-rate-doc",         "product_doc"),
+    ("docs/error_codes.md",              "error-codes",         "product_doc"),
+]
+
+def index_all():
+    print("=== Indexing policy documents ===")
+    for s3_key, doc_id, category in POLICY_DOCS:
+        print(f"\nLoading {s3_key}...")
+        doc = load_from_s3(s3_key, doc_id, category)
+        index_document(doc)
+
+    print("\n=== Indexing FAQ ===")
+    faq_docs = load_faq_csv(FAQ_CSV_PATH)
+    for doc in faq_docs:
+        index_document(doc)
+
+    print("\n=== Indexing resolved tickets (last 90 days) ===")
+    tickets = fetch_resolved_tickets_from_crm(days=90)
+    ticket_docs = load_resolved_tickets(tickets)
+    for doc in ticket_docs:
+        index_document(doc)
+
+    print("\n=== Done ===")
+
+def fetch_resolved_tickets_from_crm(days: int) -> list[dict]:
+    """Pull closed tickets from Freshdesk/Zendesk API."""
+    import httpx, os
+    from datetime import datetime, timedelta, timezone
+
+    since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    resp = httpx.get(
+        "https://crm.internal/tickets",
+        params={"status": "resolved", "updated_since": since, "per_page": 1000},
+        headers={"Authorization": f"Bearer {os.environ['CRM_API_KEY']}"},
+    )
+    resp.raise_for_status()
+    return [
+        {"ticket_id": t["id"], "issue": t["description"], "resolution": t["resolution_note"]}
+        for t in resp.json()["tickets"]
+        if t.get("resolution_note")
+    ]
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--doc",    help="Re-index a single S3 key")
+    parser.add_argument("--delete", help="Delete a doc_id from the KB")
+    args = parser.parse_args()
+
+    if args.delete:
+        delete_document(args.delete)
+    elif args.doc:
+        match = next((d for d in POLICY_DOCS if d[0] == args.doc), None)
+        if not match:
+            print(f"Unknown doc: {args.doc}")
+        else:
+            doc = load_from_s3(*match)
+            index_document(doc)
+    else:
+        index_all()
+```
+
+---
+
+### 5.7 Verifying the Index
+
+After indexing, always spot-check before putting it live.
+
+```python
+# scripts/verify_kb.py
+from src.rag.retriever import hybrid_retrieve
+
+test_queries = [
+    ("why is my payment stuck",        "payment_policy"),
+    ("what documents are needed for KYC", "kyc_policy"),
+    ("what is the current USD INR rate",  None),
+    ("how long does a refund take",       "payment_policy"),
+]
+
+for query, expected_category in test_queries:
+    results = hybrid_retrieve(query, top_k=3, category=expected_category)
+    print(f"\nQuery: '{query}'")
+    for r in results:
+        print(f"  [{r.category}] {r.source}  score={r.score:.3f}")
+        print(f"  {r.text[:120]}...")
+    assert len(results) > 0, f"No results for: {query}"
+
+print("\n✓ KB verification passed")
+```
+
+---
+
+### 5.8 Payload Schema (what gets stored in Qdrant per chunk)
+
+```json
+{
+  "text":        "Payments may be delayed up to 2 business days if the beneficiary bank...",
+  "heading":     "Payment Processing Timelines",
+  "doc_id":      "payment-policy-v4",
+  "chunk_index": 7,
+  "category":    "payment_policy",
+  "source":      "policies/payment_policy_v4.pdf",
+  "language":    "en",
+  "version":     "v4"
+}
+```
+
+`category` and `version` have payload indexes (created in setup) so Qdrant can do pre-filtered ANN — only searching vectors that match the ticket's intent category rather than scanning all 500K vectors.
 
 ### Hybrid Retrieval
 
