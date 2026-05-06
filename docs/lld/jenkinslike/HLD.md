@@ -1,356 +1,686 @@
-# High-Level Design: Jenkins-like Execution System
+# High-Level Design: Jenkins-like Execution Platform
 
-**Audience:** Engineers designing or reviewing a CI/CD job orchestration platform similar to Jenkins.
-
----
-
-## 1. Problem & Scope
-
-**Goal:** Build a system that accepts job definitions, queues build requests,
-assigns them to compatible workers, executes ordered pipeline stages, and exposes
-build status, logs, and history.
-
-**What we are building:**
-
-- A control plane for job registration, build triggering, queueing, scheduling,
-  cancellation, and inspection.
-- A worker plane for executing pipeline steps on labeled agents.
-- A metadata/log path so users can see build history and diagnose failures.
-
-**Non-goals for the core system:**
-
-- Not a source-code hosting system.
-- Not a full artifact repository, though artifact publishing hooks are supported.
-- Not a secret manager, though the execution layer integrates with one.
-- Not a Kubernetes scheduler replacement; external worker platforms can be used
-  underneath the agent abstraction.
+**Audience:** Principal engineers and senior reviewers designing a durable,
+multi-tenant CI/CD execution platform similar to Jenkins, Buildkite, GitHub
+Actions, or internal build orchestration systems.
 
 ---
 
-## 2. Requirements
+## 1. Executive Summary
 
-### Functional
+We are designing a CI/CD execution platform that accepts versioned job
+definitions, turns triggers into durable build runs, schedules those runs onto
+compatible workers, executes isolated pipeline steps, and exposes auditable
+status, logs, and artifacts.
 
-- Register jobs with pipeline definitions, parameters, environment, and required
-  agent labels.
-- Trigger builds manually, through APIs, or from SCM/webhook events.
-- Queue builds and assign them to compatible agents.
-- Execute stages and steps in order, with failure short-circuiting.
-- Track build status: queued, running, success, failed, cancelled.
-- Store build logs, step results, timestamps, and agent assignment.
-- Support cancellation before execution and best-effort interruption while
-  running.
-- Provide APIs/UI for job management and build inspection.
+The system should be treated as two planes:
 
-### Non-functional
+- **Control plane:** Owns APIs, job versions, build state transitions, queueing,
+  scheduling, leases, policy, and audit.
+- **Execution plane:** Owns agent lifecycle, workspace isolation, SCM checkout,
+  step execution, log streaming, artifact upload, and heartbeats.
 
-- **Availability:** Users should be able to trigger and inspect builds during
-  individual worker failures.
-- **Durability:** Accepted build requests and build metadata should survive
-  process restarts.
-- **Scalability:** Scale workers horizontally by agent label and workload type.
-- **Fairness:** Avoid one busy job starving all other jobs.
-- **Isolation:** Builds from different jobs or tenants should not share mutable
-  workspaces or credentials.
-- **Observability:** Queue depth, wait time, agent utilization, build duration,
-  and failure rates must be visible.
+The central design principle is: **the metadata store is the source of truth for
+state; queues and workers are delivery mechanisms.** Duplicate queue messages,
+worker retries, and agent restarts are expected. Correctness comes from
+idempotent commands, compare-and-swap state transitions, and short-lived leases.
 
 ---
 
-## 3. High-Level Architecture
+## 2. Product Scope and Non-Goals
+
+### In scope
+
+- Register and version jobs/pipelines.
+- Trigger builds manually, through API calls, schedules, or SCM webhooks.
+- Queue, prioritize, cancel, and inspect builds.
+- Match builds to agents using labels/capabilities.
+- Execute ordered stages/steps with failure short-circuiting.
+- Persist build/stage/step status, logs, artifacts, and audit records.
+- Enforce tenant, folder, repository, and environment-level policies.
+- Operate across multiple worker pools and availability zones.
+
+### Non-goals
+
+- Source-code hosting. We integrate with Git providers.
+- Secret storage. We integrate with a secret manager and scope credentials at
+  runtime.
+- Artifact repository internals. We store artifact metadata and pointers.
+- Kubernetes scheduler replacement. Kubernetes, VMs, or bare metal can be used
+  under the agent abstraction.
+- Exactly-once execution of arbitrary user code. The realistic target is
+  exactly-once state transition and at-least-once assignment with idempotent
+  callbacks.
+
+---
+
+## 3. Design Tenets
+
+| Tenet | What it means |
+|-------|---------------|
+| Durable before visible | Return a build number only after the build run and queue intent are durable. |
+| Version everything | A build points to a specific job definition version, not "latest". |
+| Leases, not ownership | Agents receive expiring leases; scheduler can recover orphaned work. |
+| Idempotent boundaries | Trigger, assign, heartbeat, log append, and result callbacks tolerate retries. |
+| Isolate untrusted work | Each build gets a clean workspace/container and scoped credentials. |
+| Control blast radius | Use tenant/job concurrency limits, label pools, quotas, and circuit breakers. |
+| Separate hot metadata from heavy blobs | Store state in DB; logs/artifacts in append/object storage. |
+
+---
+
+## 4. Requirements and SLOs
+
+### Functional requirements
+
+- Job CRUD with versioned pipeline definitions.
+- Build trigger APIs with idempotency keys.
+- Queueing with priority, cancellation, and per-tenant/job concurrency limits.
+- Agent registration, capability labels, heartbeats, and drain mode.
+- Stage/step execution with terminal result reporting.
+- Live log streaming and historical log retrieval.
+- Artifact publishing with retention.
+- Audit trail for job edits, approvals, triggers, cancels, secret access, and
+  deploys.
+
+### Non-functional requirements
+
+| Area | Target |
+|------|--------|
+| Availability | Control plane remains available through a single instance/AZ failure. |
+| Durability | Accepted builds, final statuses, and audit events survive process restarts. |
+| Scheduling latency | Low seconds p95 from runnable queue entry to agent assignment under normal load. |
+| Build inspection latency | Status reads are low latency and do not depend on workers being healthy. |
+| Isolation | No mutable workspace or credential sharing across runs. |
+| Operability | Queue age, label scarcity, scheduler lag, worker health, and callback errors are first-class metrics. |
+
+### Scale assumptions
+
+These are sizing inputs, not hard limits:
+
+| Dimension | Initial assumption | Design implication |
+|-----------|--------------------|--------------------|
+| Jobs | 100k registered jobs | Job registry must be indexed by tenant/folder/repo/name. |
+| Builds | 1M build runs/day | Build metadata needs partitioning/retention. |
+| Concurrency | 10k running builds | Agent leases and callbacks must scale horizontally. |
+| Logs | 10-100 KB/sec per active build, bursty | Logs bypass primary DB and go to append storage. |
+| Artifacts | MB to GB per build | Object storage plus retention policy. |
+| Tenants | Many teams/orgs sharing workers | Quotas and fair scheduling are required from day one. |
+
+---
+
+## 5. High-Level Architecture
 
 ```
-                         ┌──────────────────────────────────┐
-                         │        USER / SCM / WEBHOOKS      │
-                         └────────────────┬─────────────────┘
-                                          │
-                         ┌────────────────▼─────────────────┐
-                         │            API GATEWAY            │
-                         │ AuthN/AuthZ, validation, rate lim │
-                         └────────────────┬─────────────────┘
-                                          │
-                 ┌────────────────────────▼────────────────────────┐
-                 │                 CONTROL PLANE                   │
-                 │ Job registry, queue manager, scheduler, state   │
-                 └───────┬───────────────────────┬────────────────┘
-                         │                       │
-                         ▼                       ▼
-          ┌────────────────────────┐   ┌──────────────────────────┐
-          │   METADATA DATABASE    │   │      DURABLE QUEUE       │
-          │ jobs, runs, stages,    │   │ pending build requests   │
-          │ status, parameters     │   │ partitioned by queue key │
-          └───────────┬────────────┘   └───────────┬──────────────┘
-                      │                            │
-                      ▼                            ▼
-          ┌────────────────────────┐   ┌──────────────────────────┐
-          │      LOG STORAGE       │   │       WORKER AGENTS      │
-          │ streamed console logs  │   │ executors with labels    │
-          └────────────────────────┘   └───────────┬──────────────┘
-                                                   │
-                                                   ▼
-                                      ┌──────────────────────────┐
-                                      │ WORKSPACE / ARTIFACTS /  │
-                                      │ SECRETS / SCM INTEGRATION│
-                                      └──────────────────────────┘
+                  +-------------------------------+
+                  | Users / SCM / Schedules / API |
+                  +---------------+---------------+
+                                  |
+                                  v
+                  +-------------------------------+
+                  | API Gateway                   |
+                  | Auth, validation, rate limit  |
+                  +---------------+---------------+
+                                  |
+                                  v
+        +---------------------------------------------------+
+        | Control Plane                                     |
+        | job registry, trigger service, scheduler, policy  |
+        +------+---------------------+----------------------+
+               |                     |
+               v                     v
+   +----------------------+  +------------------------------+
+   | Metadata DB          |  | Durable Queue / Outbox       |
+   | jobs, runs, leases,  |  | queue entries, callbacks,    |
+   | stages, steps, audit |  | retryable events             |
+   +----------+-----------+  +--------------+---------------+
+              |                             |
+              v                             v
+   +----------------------+       +-------------------------+
+   | Log Store            |       | Worker Agent Pools      |
+   | append-only streams  |       | linux, docker, gpu, ... |
+   +----------------------+       +-----------+-------------+
+                                              |
+                                              v
+                         +----------------------------------+
+                         | Workspace / SCM / Secrets /      |
+                         | Artifact Store / Deployment APIs |
+                         +----------------------------------+
 ```
 
-**Design principle:** Keep scheduling and state transitions in the control plane;
-keep build execution and tool-specific behavior inside workers. Workers should be
-replaceable because they are the least trusted and most failure-prone part of the
-system.
+### Core separation
+
+- The **control plane** can reject, queue, schedule, and inspect builds without
+  executing user code.
+- The **execution plane** can be scaled, drained, replaced, or isolated by
+  environment without changing the state model.
+- Logs and artifacts are separate because their write volume and retention model
+  differ from metadata.
 
 ---
 
-## 4. Core Components
+## 6. Component Responsibilities
 
-### 4.1 API Gateway
+### 6.1 API Gateway
 
-- Exposes REST/gRPC endpoints for job CRUD, build trigger, cancel, logs, and
-  history.
-- Performs authentication, authorization, input validation, idempotency-key
-  checks, and request rate limiting.
-- Converts external triggers into normalized build requests.
+- Exposes REST/gRPC endpoints for job management, trigger, cancel, retry,
+  approval, logs, artifacts, and history.
+- Verifies identity, tenant membership, repository access, webhook signatures,
+  and rate limits.
+- Requires idempotency keys for trigger APIs that can be retried by clients or
+  webhook providers.
+- Emits audit records for mutating operations.
 
-### 4.2 Job Registry
+### 6.2 Job Registry
 
-- Stores immutable or versioned job definitions.
-- Holds pipeline stages, parameters, default environment, agent label
-  requirements, concurrency policy, retention policy, and SCM metadata.
-- Supports a "build uses definition version N" invariant so changing a job does
-  not mutate already queued builds.
+- Stores versioned job definitions.
+- Tracks defaults: environment, parameter schema, SCM repo/ref rules, required
+  labels, timeout, retry policy, concurrency policy, retention policy, and
+  approval gates.
+- Enforces the invariant: **a build run always references exactly one immutable
+  job version.**
 
-### 4.3 Queue Manager
+### 6.3 Trigger Service
 
-- Persists accepted build requests into a durable queue.
-- Maintains queue metadata such as enqueue time, priority, job key, and required
-  labels.
-- Can enforce per-job or per-tenant concurrency limits before a request becomes
-  runnable.
+- Normalizes manual, webhook, schedule, and API triggers.
+- Deduplicates by `(tenant_id, job_id, idempotency_key)`.
+- Creates the build run and queue intent in one transaction, or writes an
+  outbox event in the same transaction for asynchronous queue publication.
 
-### 4.4 Scheduler
+### 6.4 Queue Manager
 
-- Matches queued builds to compatible agents based on labels and capacity.
-- Handles fairness across jobs, tenants, and label pools.
-- Marks a build as running only after an agent lease is acquired.
-- Requeues builds when an agent disappears before acknowledging the assignment.
+- Maintains durable queue entries with required labels, priority, tenant/job
+  keys, visibility time, and retry count.
+- Applies admission controls before work becomes runnable:
+  - tenant quota
+  - job concurrency limit
+  - environment freeze window
+  - manual approval requirement
+  - disabled job/repository policy
+- Provides the scheduler with candidate work by label pool and fairness shard.
 
-### 4.5 Worker Agent
+### 6.5 Scheduler
 
-- Polls or receives assignments from the scheduler.
-- Creates an isolated workspace for each build.
-- Checks out source, resolves environment and credentials, runs steps, streams
-  logs, uploads artifacts, and reports step results.
-- Sends heartbeats so the control plane can detect stuck or dead agents.
+- Converts runnable queue entries into agent leases.
+- Matches required labels to agent capabilities.
+- Uses optimistic state transitions:
+  - claim queue entry
+  - create lease
+  - transition build `QUEUED -> RUNNING`
+- Handles fairness across tenants, folders, jobs, and priority classes.
+- Recovers expired leases when workers stop heartbeating.
 
-### 4.6 Metadata Store
+### 6.6 Worker Agent
 
-- Source of truth for jobs and build state.
-- Tables/entities: jobs, job_versions, build_runs, stage_runs, step_runs,
-  agent_leases, queue_entries.
-- Supports optimistic state transitions, for example:
-  `QUEUED -> RUNNING -> SUCCESS|FAILED|CANCELLED`.
+- Registers capabilities such as `linux`, `docker`, `gpu`, `arm64`, or
+  `prod-deploy`.
+- Polls for assignments or receives push notifications.
+- Creates isolated workspaces/containers.
+- Checks out source, resolves secrets, executes steps, streams logs, uploads
+  artifacts, and reports status.
+- Sends heartbeats tied to an agent lease.
+- Supports drain mode so rolling upgrades do not interrupt new assignments.
 
-### 4.7 Log and Artifact Storage
+### 6.7 Metadata Store
 
-- Logs are append-only and streamed during execution.
-- Artifacts are stored separately from metadata because they are large and have
-  different retention/access patterns.
-- Metadata keeps pointers to log segments and artifact objects.
+- Source of truth for jobs, job versions, build runs, stage runs, step runs,
+  queue entries, agent state, leases, and audit records.
+- Uses compare-and-swap/version columns for state transitions.
+- Partitions high-volume tables by tenant and/or time.
+- Keeps recent hot rows indexed for UI/API reads; archives old history.
 
----
+### 6.8 Log Store
 
-## 5. Main Flows
+- Append-only per build or per step.
+- Supports live tail and historical reads.
+- Uses sequence numbers to make appends idempotent.
+- Stores metadata pointers in DB, not raw log lines.
 
-### 5.1 Trigger Build
+### 6.9 Artifact Store
 
-1. User or SCM webhook calls `POST /jobs/{job}/builds`.
-2. API authenticates the caller and validates parameters.
-3. Control plane loads the latest job definition version.
-4. Build run row is created with status `QUEUED`.
-5. Durable queue entry is created with build number and required labels.
-6. API returns build number and status URL.
-
-### 5.2 Schedule and Execute
-
-1. Scheduler reads runnable queue entries.
-2. Scheduler finds an available agent matching all required labels.
-3. Scheduler creates an agent lease and transitions build to `RUNNING`.
-4. Worker receives the assignment and starts streaming logs.
-5. Worker executes stages sequentially.
-6. Each step result is persisted.
-7. First failed step marks the stage and build failed; later stages are skipped.
-8. On success, worker uploads artifacts and marks build `SUCCESS`.
-
-### 5.3 Cancel Build
-
-- If build is `QUEUED`, remove or tombstone the queue entry and mark
-  `CANCELLED`.
-- If build is `RUNNING`, send an interrupt/cancel signal to the worker and mark
-  the run cancelled after acknowledgement or timeout.
-- If build is terminal, cancellation is rejected as a no-op.
-
-### 5.4 Agent Failure
-
-1. Agent heartbeats stop.
-2. Scheduler expires the agent lease.
-3. Any running build assigned to that lease is marked failed or requeued based on
-   job retry policy.
-4. Queue capacity for that label pool is recalculated.
+- Object storage keyed by tenant/job/build/artifact name.
+- Integrity via checksum and size metadata.
+- Retention by policy, legal hold, and environment.
+- Access controlled by build/job permissions.
 
 ---
 
-## 6. Data Model Sketch
+## 7. Public API Sketch
+
+### Trigger build
 
 ```
-Job
-  job_id, name, created_by, disabled, created_at
+POST /tenants/{tenantId}/jobs/{jobName}/builds
+Idempotency-Key: <client-generated-key>
 
-JobVersion
-  job_version_id, job_id, version, pipeline_definition_json, created_at
-
-BuildRun
-  build_id, job_id, job_version_id, build_number, status,
-  queued_at, started_at, completed_at, agent_id, failure_message
-
-StageRun
-  stage_run_id, build_id, stage_name, ordinal, status,
-  started_at, completed_at
-
-StepRun
-  step_run_id, stage_run_id, step_name, ordinal, status,
-  started_at, completed_at, error_message
-
-QueueEntry
-  queue_entry_id, build_id, required_labels, priority,
-  queued_at, lease_id, visible_at
-
-Agent
-  agent_id, labels, status, last_heartbeat_at, max_executors
-
-AgentLease
-  lease_id, agent_id, build_id, status, acquired_at, expires_at
+{
+  "jobVersion": "latest",
+  "parameters": { "branch": "main", "suite": "smoke" },
+  "source": { "type": "manual" }
+}
 ```
 
-**Important invariant:** A build run points to a specific job version. This makes
-replay, audit, and debugging deterministic even after the job is edited.
+Response:
+
+```
+{
+  "buildId": "bld_123",
+  "buildNumber": 4182,
+  "status": "QUEUED",
+  "statusUrl": "/tenants/t1/builds/bld_123"
+}
+```
+
+### Worker lease callback
+
+```
+POST /agents/{agentId}/leases/{leaseId}/steps/{stepId}/result
+
+{
+  "attempt": 1,
+  "status": "SUCCESS",
+  "startedAt": "...",
+  "completedAt": "...",
+  "logOffset": 91823
+}
+```
+
+Callbacks are idempotent by `(lease_id, step_id, attempt)`.
 
 ---
 
-## 7. Scheduling Strategy
+## 8. Data Model and Invariants
 
-### Label matching
+```
+Tenant(tenant_id, name, quota_policy_id)
 
-- A build requiring labels `{linux, docker}` can run only on agents containing
-  both labels.
-- Label pools should be monitored independently because bottlenecks are often
-  label-specific.
+Job(job_id, tenant_id, folder_id, name, disabled, created_by, created_at)
 
-### Fairness
+JobVersion(job_version_id, job_id, version, pipeline_definition_json,
+           checksum, created_by, created_at)
 
-Common options:
+BuildRun(build_id, tenant_id, job_id, job_version_id, build_number,
+         status, trigger_source, idempotency_key, queued_at, started_at,
+         completed_at, agent_id, lease_id, failure_code, failure_message)
 
-| Strategy | Benefit | Trade-off |
-|----------|---------|-----------|
-| FIFO global queue | Simple and predictable | One noisy job can dominate workers |
-| Per-job concurrency limits | Prevents starvation | Requires more scheduler state |
-| Weighted fair queues | Better multi-tenant fairness | More complex to tune |
-| Priority queues | Supports urgent jobs | Can starve low-priority work |
+StageRun(stage_run_id, build_id, ordinal, stage_name, status,
+         started_at, completed_at)
 
-Practical default: FIFO within a job, per-job concurrency limits, and weighted
-fair selection across jobs or tenants.
+StepRun(step_run_id, stage_run_id, ordinal, step_name, attempt, status,
+        started_at, completed_at, error_code, error_message)
+
+QueueEntry(queue_entry_id, build_id, tenant_id, job_id, required_labels,
+           priority, visible_at, claimed_by, claim_expires_at, retry_count)
+
+Agent(agent_id, pool_id, labels, status, max_executors, used_executors,
+      last_heartbeat_at, version)
+
+AgentLease(lease_id, agent_id, build_id, status, acquired_at, expires_at,
+           heartbeat_at)
+
+AuditEvent(event_id, tenant_id, actor, action, resource, occurred_at, payload)
+```
+
+### Core invariants
+
+- `BuildRun.job_version_id` is immutable.
+- A build has at most one active `AgentLease`.
+- A lease can be active only while the build is `RUNNING`.
+- Terminal statuses are immutable.
+- Step results are append/update-once by `(step_run_id, attempt)`.
+- A queue entry is either runnable, claimed, completed, cancelled, or delayed;
+  it is never "lost" without a terminal build state.
+- Logs may arrive late, but final build status does not depend on log storage
+  being perfectly synchronous.
+
+### State machine
+
+```
+CREATED
+  -> QUEUED
+  -> WAITING_FOR_APPROVAL
+  -> RUNNING
+  -> CANCELLING
+  -> CANCELLED
+
+QUEUED  -> CANCELLED
+RUNNING -> SUCCESS
+RUNNING -> FAILED
+RUNNING -> TIMED_OUT
+RUNNING -> INFRA_FAILED
+RUNNING -> CANCELLING
+```
+
+The implementation can start with fewer statuses, but the HLD should reserve
+separate terminal failure classes. A user test failure and an infrastructure
+failure require different retry and alerting behavior.
 
 ---
 
-## 8. Scalability
+## 9. Consistency and Transaction Boundaries
 
-- **API layer:** Stateless; scale horizontally behind a load balancer.
-- **Queue:** Partition by queue group or required label family. Keep ordering
-  where needed, but avoid one global partition.
-- **Scheduler:** Use leader election per queue shard, or make scheduling
-  optimistic with compare-and-swap leases.
-- **Workers:** Scale by label pool. Autoscale from queue depth, oldest queued
-  age, and agent utilization.
-- **Logs:** Stream to append-only storage; avoid writing every log line through
-  the primary metadata database.
-- **Artifacts:** Store in object storage with retention policies.
+### Trigger path
+
+Use one of these patterns:
+
+1. **Single DB transaction:** Insert `BuildRun` and `QueueEntry` together.
+2. **Transactional outbox:** Insert `BuildRun` and `OutboxEvent` together; a
+   publisher writes to the durable queue.
+
+Avoid "insert DB row, then publish queue message" without recovery. A crash
+between those operations creates a visible build that never runs.
+
+### Assignment path
+
+Scheduler assignment should be a compare-and-swap operation:
+
+1. Select runnable queue entry.
+2. Select compatible agent capacity.
+3. Update queue entry from unclaimed to claimed with expiry.
+4. Insert agent lease.
+5. Transition build `QUEUED -> RUNNING` if current status is still `QUEUED`.
+
+If any step fails, rollback or let the claim expire and retry. Duplicate
+schedulers should not be able to run the same build because only one CAS should
+win.
+
+### Worker callbacks
+
+Worker callbacks are at least once. The server makes them idempotent with
+stable identifiers:
+
+- `lease_id`
+- `stage_run_id`
+- `step_run_id`
+- `attempt`
+- monotonic log offset
 
 ---
 
-## 9. Reliability and Failure Modes
+## 10. Scheduling Strategy
 
-| Failure | Mitigation |
-|---------|------------|
-| API process crashes after DB write | Use transactional outbox or write queue entry transactionally with build row |
-| Queue message delivered twice | Make build state transitions idempotent by build ID |
-| Worker dies mid-build | Heartbeat lease expires; mark failed or retry from start |
-| Log storage unavailable | Buffer briefly on worker; fail build or degrade log streaming after timeout |
-| Artifact upload fails | Mark build unstable/failed based on job policy |
-| Poison job definition | Validate schema at registration; fail fast before scheduling |
-| Scheduler crash | Durable queue plus DB state allows another scheduler to resume |
+### Capability model
+
+A build requiring `{linux, docker}` can run only on agents whose label set is a
+superset of those labels. Labels should distinguish:
+
+- OS/runtime: `linux`, `windows`, `arm64`
+- tooling: `docker`, `java21`, `node`
+- isolation level: `trusted`, `untrusted`, `prod-deploy`
+- geography/compliance: `us-east`, `eu`, `pci`
+
+### Queue structure
+
+Use logical queues rather than one global FIFO:
+
+```
+tenant -> priority class -> label pool -> job queue
+```
+
+Within each job queue, preserve FIFO unless priority or retry policy says
+otherwise.
+
+### Fairness policy
+
+Recommended default:
+
+- Per-tenant concurrency quota.
+- Per-job max concurrency.
+- Weighted fair selection across tenants.
+- FIFO within each job.
+- Priority aging so low-priority work eventually runs.
+
+This avoids the common Jenkins failure mode where one noisy repository consumes
+all executors.
+
+### Lease and heartbeat
+
+- Agent leases have short expiries, extended by worker heartbeats.
+- Scheduler marks a lease expired if heartbeats stop.
+- Expired leases transition the build according to retry policy:
+  - retry from start for infra failure
+  - fail terminally if retry budget is exhausted
+  - never blindly resume arbitrary shell steps mid-command
 
 ---
 
-## 10. Security and Isolation
+## 11. Execution Semantics
 
-- Run each build in a clean workspace or container.
-- Resolve secrets just-in-time and mask them in logs.
-- Scope credentials to job, folder, tenant, and environment.
-- Apply RBAC for job configuration, trigger, cancel, log read, and artifact read.
+### Stage and step model
+
+- Stages execute sequentially by default.
+- A failed step fails its stage.
+- A failed required stage short-circuits later stages.
+- Optional extensions:
+  - parallel stages
+  - matrix builds
+  - retryable steps
+  - manual approval gates
+  - post-build cleanup hooks
+
+### Workspace lifecycle
+
+1. Allocate isolated workspace/container.
+2. Checkout source at immutable commit SHA.
+3. Resolve environment and secrets.
+4. Execute steps.
+5. Upload logs/artifacts.
+6. Run cleanup.
+7. Destroy workspace or move it to quarantine for debugging.
+
+### Idempotency expectation for user code
+
+The platform can make scheduling idempotent, but it cannot make arbitrary
+deploy scripts idempotent. Production deployment jobs should require:
+
+- explicit environment locks
+- approval gates
+- idempotent deploy commands
+- rollback or compensation steps
+- audit events
+
+---
+
+## 12. Scalability and Capacity
+
+### Control plane
+
+- API services are stateless and horizontally scalable.
+- Scheduler is sharded by queue shard or label pool.
+- Each scheduler shard uses leader election or optimistic claims.
+- Metadata reads for UI are served from indexed hot tables or read replicas.
+
+### Queue
+
+- Partition by tenant/label pool to avoid one global bottleneck.
+- Keep enough partitions to scale scheduler consumers.
+- Track oldest visible queue entry per shard.
+
+### Metadata
+
+- `BuildRun`, `StageRun`, and `StepRun` grow quickly; partition by time and
+  tenant.
+- Keep recent rows hot; archive old build history to cheaper storage.
+- Use narrow indexes for common UI queries:
+  - latest builds by job
+  - running builds by tenant
+  - build by build number
+  - queue by label pool
+
+### Logs and artifacts
+
+- Do not store console logs in the primary relational database.
+- Store compressed log segments in append/object storage.
+- Store artifact blobs in object storage with checksums and retention.
+
+---
+
+## 13. Reliability and Failure Modes
+
+| Failure | Detection | Mitigation |
+|---------|-----------|------------|
+| API crash during trigger | Missing outbox publish or incomplete transaction | Transactional insert of build and queue intent; outbox replay |
+| Duplicate webhook | Same idempotency key or SCM delivery ID | Return existing build or dedupe according to trigger policy |
+| Scheduler split brain | Two schedulers claim same shard | CAS claims plus lease ownership; leader election for efficiency, not correctness |
+| Queue message duplicated | Duplicate queue entry delivery | Build state transition idempotency by build ID |
+| Worker dies mid-build | Missed heartbeats | Expire lease; mark infra failure or retry from start |
+| Agent loses network but step continues | Lease expiry and late callbacks | Reject callbacks for expired lease unless explicitly reconciled |
+| Log store unavailable | Append failures or lag metrics | Buffer bounded logs locally; degrade live tail; fail build only if policy requires logs |
+| Artifact upload fails | Worker callback error | Mark build failed/unstable based on artifact criticality |
+| Poison job definition | Validation failures or repeated infra failures | Schema validation, dry run, quarantine job/version |
+| Label pool exhausted | Queue age by label rises | Autoscale agents, shed low-priority work, alert owners |
+| Metadata DB unavailable | API/scheduler DB errors | Fail closed for writes; continue cached read-only status where safe |
+
+---
+
+## 14. Security and Isolation
+
+### Threat model
+
+User build code is untrusted. It may try to read secrets, escape the workspace,
+exfiltrate artifacts, attack internal services, or poison shared caches.
+
+### Controls
+
+- Run untrusted jobs in containers, VMs, or sandboxed runners.
+- Use clean workspaces by default.
+- Scope credentials to tenant/job/environment and inject just in time.
+- Mask secrets in logs and block known secret patterns at upload.
+- Enforce network egress policies.
+- Separate trusted deployment agents from general CI agents.
 - Validate SCM webhook signatures.
-- Enforce network egress policies for untrusted jobs.
-- Keep audit logs for job changes, manual triggers, approvals, and secret access.
+- Apply RBAC for job edit, trigger, cancel, approve, log read, artifact read,
+  and secret use.
+- Record immutable audit events for sensitive operations.
+
+### Production deployments
+
+Production deploy jobs should require stronger policy:
+
+- protected branches/tags
+- explicit approvals
+- environment locks
+- change ticket or release record
+- break-glass audit path
+- restricted agent labels
 
 ---
 
-## 11. Observability
+## 15. Observability and Operating Model
 
-Key metrics:
+### Golden signals
 
-- Queue depth by label and job.
-- Oldest queued build age.
-- Scheduling latency and build duration percentiles.
-- Agent online/offline count and executor utilization.
-- Build success/failure/cancel rate.
-- Step-level failure distribution.
-- Log streaming lag and artifact upload failures.
+- Trigger success/error rate.
+- Queue depth and oldest queue age by tenant/job/label.
+- Scheduling latency.
+- Agent lease acquisition failures.
+- Agent heartbeat lag and offline count.
+- Running build count by label pool.
+- Build duration percentiles by job.
+- Failure rate by reason: user failure, infra failure, timeout, cancellation.
+- Log append lag and artifact upload failures.
 
-Useful traces:
+### Required dashboards
 
-- Trigger request -> queue entry -> scheduler decision -> worker lease -> stage
-  and step execution -> terminal status.
+- Fleet health by label pool.
+- Queue health by tenant and priority.
+- Scheduler shard health.
+- Top failing jobs and top resource consumers.
+- Webhook ingestion and dedupe.
+- DB/queue/log/artifact dependency health.
 
----
+### Runbooks
 
-## 12. Key Trade-offs
-
-| Decision | Option chosen | Reason |
-|----------|---------------|--------|
-| Control plane state | Durable metadata DB plus durable queue | Survives restarts and supports inspection |
-| Worker assignment | Label-based agent matching | Simple, extensible capability model |
-| Build isolation | Fresh workspace/container per run | Avoids cross-build contamination |
-| Logs | Append-only log storage | High write volume and independent retention |
-| Job definitions | Versioned definitions | Deterministic audit and replay |
-| Execution model | Sequential stages by default | Matches common CI semantics; parallel stages can be added later |
-
----
-
-## 13. Extensions
-
-- Parallel stages and matrix builds.
-- Retry policies per stage or step.
-- Manual approval gates.
-- Cron/scheduled triggers.
-- Distributed artifact cache.
-- Dynamic cloud agents.
-- Blue/green deployment plugins.
-- Policy-as-code for approvals, secrets, and production deploys.
+- Drain a worker pool.
+- Recover a scheduler shard.
+- Requeue orphaned builds.
+- Disable a noisy tenant/job.
+- Investigate stuck queued builds by label.
+- Rotate worker credentials.
+- Restore build metadata from backup.
 
 ---
 
-## 14. Summary
+## 16. Disaster Recovery and Data Retention
 
-A Jenkins-like execution system splits naturally into a durable control plane and
-an elastic worker plane. The control plane owns job versions, queueing,
-scheduling, leases, and state transitions. Workers own isolated execution,
-logs, artifacts, and heartbeats. This separation keeps the scheduling semantics
-auditable while allowing executors to scale and fail independently.
+| Data | Recovery expectation | Retention |
+|------|----------------------|-----------|
+| Job definitions | Strong backup/restore; versioned | Long-lived |
+| Build metadata | Restore recent history and terminal status | Hot for weeks/months, archived later |
+| Logs | Best-effort live; durable historical logs after flush | Policy driven |
+| Artifacts | Durable object storage with lifecycle policy | Policy driven |
+| Audit events | High durability, tamper-evident | Long-lived/compliance |
+
+Backups should be tested by restoring into an isolated environment. DR plans
+must define whether queued/running builds are replayed, failed, or manually
+reconciled after regional failover.
+
+---
+
+## 17. Key Trade-offs
+
+| Decision | Choice | Rationale | Cost |
+|----------|--------|-----------|------|
+| State authority | Metadata DB | Strong inspectability and auditable transitions | DB must scale and be protected |
+| Queue semantics | At-least-once durable queue | Practical and recoverable | Requires idempotent consumers |
+| Worker ownership | Expiring leases | Handles worker death and split brain | More state-machine complexity |
+| Scheduling fairness | Weighted fair queues plus quotas | Prevents noisy-neighbor starvation | More scheduler state |
+| Logs | Append/object storage | Handles high write volume | Requires log index/pointers |
+| Job definitions | Immutable versions | Deterministic replay/debugging | More storage and UI complexity |
+| Isolation | Fresh workspace/container | Reduces contamination and secret leakage | Startup overhead |
+| Deployment jobs | Restricted labels and approvals | Limits production blast radius | Slower deploy path |
+
+---
+
+## 18. Implementation Phases
+
+### Phase 1: Correct single-region core
+
+- Versioned jobs.
+- Durable build runs and queue entries.
+- Basic label scheduling.
+- Agent heartbeats and leases.
+- Logs and artifacts outside primary DB.
+- Idempotent trigger and worker callbacks.
+
+### Phase 2: Multi-tenant scale
+
+- Scheduler sharding.
+- Tenant/job quotas.
+- Weighted fair queues.
+- Autoscaling worker pools.
+- Read replicas and archival for metadata.
+- Operational dashboards and runbooks.
+
+### Phase 3: Enterprise controls
+
+- Approval gates.
+- Environment locks.
+- Policy-as-code.
+- Stronger sandboxing.
+- Compliance retention.
+- Cross-region DR.
+
+---
+
+## 19. Open Questions
+
+- Should retries re-run the entire build, a stage, or only explicitly marked
+  retryable steps?
+- Which jobs are allowed to use privileged labels such as `prod-deploy`?
+- What is the maximum acceptable queue age per priority class?
+- Are logs required for a build to be considered successful?
+- How long must artifacts and audit events be retained per tenant?
+- Do production deploys need global environment locks or scoped locks per
+  service/region?
+
+---
+
+## 20. Summary
+
+A principal-engineer-level Jenkins-like design is less about "run a task from a
+queue" and more about the contracts around that queue: immutable job versions,
+durable trigger semantics, idempotent callbacks, lease-based scheduling,
+tenant-aware fairness, untrusted-code isolation, and operability. The system is
+correct when a build can be audited from trigger to terminal state even when
+APIs retry, schedulers crash, queue messages duplicate, workers disappear, and
+logs arrive late.
