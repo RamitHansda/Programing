@@ -29,10 +29,13 @@ The most important architectural split is:
   evaluating local health, and reporting status.
 
 The core design principle is: **build once, publish an immutable artifact, then
-deploy that exact artifact everywhere.** Build workers, WAN links, event
-delivery, regional controllers, and agents will fail. Correctness comes from
-durable build and deployment state, content-addressed artifacts, explicit state
-machines, leases, idempotent commands, and conservative safety gates.
+deploy that exact artifact everywhere.** Progressive rollout is a temporary
+safety mechanism; the successful terminal state is global convergence where all
+eligible data centers run and serve the same release digest. Build workers, WAN
+links, event delivery, regional controllers, and agents will fail. Correctness
+comes from durable build and deployment state, content-addressed artifacts,
+explicit state machines, leases, idempotent commands, convergence checks, and
+conservative safety gates.
 
 ---
 
@@ -46,6 +49,8 @@ machines, leases, idempotent commands, and conservative safety gates.
 - Publish immutable release artifacts and deployment manifests.
 - Create deployment plans across environments and data centers.
 - Support deployment waves, rings, canaries, blue/green, and rolling updates.
+- Converge every eligible target data center to the same release artifact after
+  a deployment succeeds.
 - Enforce policy gates: approvals, freeze windows, branch/tag rules, change
   tickets, service ownership, and separation of duties.
 - Replicate or pre-warm artifacts close to each data center.
@@ -74,6 +79,7 @@ machines, leases, idempotent commands, and conservative safety gates.
 | Tenet | What it means |
 |-------|---------------|
 | Build once, deploy many | The same artifact digest is promoted across all data centers; production deploys never rebuild from source. |
+| Eventual global convergence | Progressive waves may temporarily run mixed versions, but successful rollout means every eligible data center serves the same release digest. |
 | Reproducible release inputs | Build records capture source commit, builder image, dependency lockfiles, config, and provenance. |
 | Immutable release identity | A deployment references artifact digests and manifest checksums, never mutable tags like `latest`. |
 | Separate intent from execution | Global plan creation is distinct from regional rollout attempts. |
@@ -670,6 +676,9 @@ AuditEvent(event_id, tenant_id, actor, action, resource_type, resource_id,
   for the requested percentage.
 - Global promotion to the next wave requires all required gates in the current
   wave to pass.
+- A deployment plan can be marked `SUCCEEDED` only when every eligible target
+  data center has converged to the plan's `release_id`; excluded or blocked
+  data centers must be explicitly recorded and approved.
 - Audit events are append-only.
 
 ### Build state machine
@@ -853,6 +862,38 @@ Before scheduling a data center into a wave, the system should check:
 An unhealthy data center is skipped, paused, or marked blocked according to the
 deployment policy. It should not silently receive a deploy.
 
+### Global convergence and drift handling
+
+The desired end state for a deployment plan is:
+
+```
+for every eligible data center:
+  desired_release_id == observed_deployed_release_id == observed_serving_release_id
+```
+
+The system should maintain a convergence controller that periodically compares
+global desired state with regional observed state. It should detect:
+
+- data center still running the previous release after the wave should be done
+- workload platform updated but traffic plane still serving the old release
+- traffic plane shifted but readiness/health did not pass
+- artifact cache missing the target release
+- region manually changed outside the deployment system
+
+Recommended behavior:
+
+1. Keep the deployment plan `RUNNING` until all eligible regions converge.
+2. Mark intentionally skipped regions as `EXCLUDED` with a reason and approval.
+3. Mark unhealthy or partitioned regions as `BLOCKED`, not successful.
+4. Alert service owners when convergence lag exceeds policy.
+5. Reconcile drift by re-emitting idempotent regional commands.
+6. Only transition the global plan to `SUCCEEDED` after convergence and required
+   health gates pass everywhere in scope.
+
+During the rollout, versions may differ temporarily by design. After successful
+completion, version skew should be zero for all eligible data centers. Any later
+skew is drift and should be visible in dashboards and audit history.
+
 ---
 
 ## 12. Rollback and Roll Forward
@@ -934,6 +975,7 @@ approval, separate status, and rollback/roll-forward instructions.
 | Traffic manager unavailable | Route update/readback fails | Pause or rollback depending on current exposure. |
 | Observability unavailable | Health gate inconclusive | Stop promotion; optionally rollback if traffic is already exposed. |
 | Bad canary metrics | Health gate failed | Stop wave; rollback exposed traffic; keep other data centers unchanged. |
+| Version drift after successful rollout | Convergence controller sees observed release differ from desired release | Re-emit idempotent regional commands; alert owners; keep drift visible until reconciled or explicitly excluded. |
 | Data center outage during deploy | Regional health and platform checks fail | Mark region blocked; do not count as success; incident workflow decides failout. |
 | Rollback fails | Rollback health gate fails | Escalate incident; keep deployment locked; require manual mitigation. |
 | Stuck environment lock | Lock age exceeds policy | Alert owners; allow audited break-glass release by privileged actor. |
@@ -992,6 +1034,7 @@ production traffic to compromised versions.
 - Regional controller heartbeat lag.
 - Artifact pre-warm success rate and latency by data center.
 - Traffic shift convergence latency.
+- Global release convergence lag and version-skew count by service/environment.
 - Health gate pass/fail/inconclusive rate.
 - Rollback frequency and rollback success rate.
 - Stuck deployments by state and age.
@@ -1007,6 +1050,8 @@ production traffic to compromised versions.
 - Regional controller fleet health.
 - Artifact distribution status.
 - Traffic manager convergence.
+- Desired versus observed release by data center, including excluded and blocked
+  regions.
 - Health-gate failures by metric and release.
 - Rollback and incident correlation.
 
@@ -1096,6 +1141,7 @@ production traffic to compromised versions.
 - Artifact pre-warming per data center.
 - Traffic-shift integration.
 - Health gates by region and version.
+- Global convergence controller and drift dashboard.
 - Regional controller dashboards and runbooks.
 
 ### Phase 3: Enterprise-grade progressive delivery
@@ -1125,6 +1171,8 @@ production traffic to compromised versions.
 - Which services require blue/green instead of rolling updates?
 - How should data-center outages be treated during global rollout: skip, block,
   or fail the deployment?
+- Who can approve excluding a data center from same-release convergence, and how
+  long can that exception remain open?
 - Which database migration classes are allowed in automatic deployment plans?
 - How long must deployment audit evidence be retained?
 
@@ -1139,6 +1187,7 @@ isolated, release artifacts immutable, deployment intent durable, regional
 execution autonomous, state transitions idempotent, traffic exposure gradual,
 health gates explicit, rollback auditable, and failure modes operationally
 visible. The system is correct when it can answer: which commit and build
-produced the artifact, what release is desired in every data center, what
-release is serving traffic, who approved it, which policy allowed it, what
-health evidence was used, and how to safely stop or reverse it.
+produced the artifact, whether every eligible data center has converged to the
+same release digest, what release is desired in every data center, what release
+is serving traffic, who approved it, which policy allowed it, what health
+evidence was used, and how to safely stop or reverse it.
