@@ -143,7 +143,7 @@ public class InMemoryBuildScheduler implements BuildScheduler {
         while (true) {
             QueuedBuild queued;
             try {
-                queued = queue.take();
+                queued = takeNextFor(agent);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 return;
@@ -155,24 +155,47 @@ public class InMemoryBuildScheduler implements BuildScheduler {
             if (run == null || run.getStatus() == BuildStatus.CANCELLED) {
                 continue;
             }
-            if (!agent.canRun(queued.getPipeline())) {
-                if (shutdown.get()) {
-                    run.markFailed("No available agent matches labels " + queued.getPipeline().getRequiredLabels());
-                    continue;
-                }
-                requeue(queued);
-                continue;
-            }
             execute(agent, queued, run);
         }
     }
 
-    private void requeue(QueuedBuild queued) {
+    private QueuedBuild takeNextFor(Agent agent) throws InterruptedException {
+        List<QueuedBuild> deferred = new ArrayList<>();
         try {
-            Thread.sleep(25);
-            queue.put(queued);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
+            while (true) {
+                QueuedBuild queued = queue.take();
+                if (queued == POISON || isRunnableBy(agent, queued)) {
+                    return queued;
+                }
+                deferred.add(queued);
+
+                QueuedBuild next;
+                while ((next = queue.poll()) != null) {
+                    if (next == POISON || isRunnableBy(agent, next)) {
+                        return next;
+                    }
+                    deferred.add(next);
+                }
+
+                requeueAll(deferred);
+                deferred.clear();
+                Thread.sleep(25);
+            }
+        } finally {
+            requeueAll(deferred);
+        }
+    }
+
+    private boolean isRunnableBy(Agent agent, QueuedBuild queued) {
+        BuildRun run = runs.get(queued.getBuildNumber());
+        return run != null
+                && run.getStatus() != BuildStatus.CANCELLED
+                && agent.canRun(queued.getPipeline());
+    }
+
+    private void requeueAll(List<QueuedBuild> queuedBuilds) {
+        for (QueuedBuild queued : queuedBuilds) {
+            queue.offer(queued);
         }
     }
 

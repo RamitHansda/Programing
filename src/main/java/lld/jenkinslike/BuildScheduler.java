@@ -9,19 +9,19 @@ import java.util.concurrent.TimeUnit;
  * Public facade for submitting and inspecting Jenkins-like pipeline builds.
  */
 public interface BuildScheduler extends AutoCloseable {
-    void register(PipelineDefinition pipeline);
+    void registerJob(PipelineDefinition pipeline);
 
-    BuildRun trigger(String jobName);
+    BuildRun triggerJob(String jobName);
 
-    BuildRun trigger(String jobName, Map<String, String> parameters);
+    BuildRun triggerJob(String jobName, Map<String, String> parameters);
 
     BuildRun submit(PipelineDefinition pipeline);
 
     BuildRun submit(PipelineDefinition pipeline, Map<String, String> parameters);
 
-    Optional<BuildRun> getRun(long buildNumber);
+    Optional<BuildRun> findBuild(long buildNumber);
 
-    List<BuildRun> getRuns();
+    List<BuildRun> listBuilds();
 
     boolean cancel(long buildNumber);
 

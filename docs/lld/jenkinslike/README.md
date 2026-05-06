@@ -5,6 +5,8 @@ registered jobs, queued build runs, labeled agents, ordered stages, named steps,
 environment/parameter injection, build logs, cancellation, and failure
 short-circuiting.
 
+For the distributed-system view, see [HLD.md](./HLD.md).
+
 ## Core concepts
 
 | Concept | Description |
