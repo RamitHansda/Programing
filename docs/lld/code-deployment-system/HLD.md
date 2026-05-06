@@ -1,33 +1,38 @@
-# High-Level Design: Multi-Data-Center Code Deployment System
+# High-Level Design: Build and Multi-Data-Center Code Deployment System
 
 **Audience:** Principal engineers and senior reviewers designing a safe,
-auditable deployment platform that can roll out application code across
-multiple data centers, regions, or availability domains.
+auditable platform that can build application code, produce immutable release
+artifacts, deploy them across multiple data centers, and rollback when needed.
 
 ---
 
 ## 1. Executive Summary
 
-We are designing a deployment system that takes an immutable, already-built
-release artifact and safely promotes it through environments and data centers.
-The platform should support progressive delivery, policy gates, traffic
-shifting, health verification, rollback, auditability, and recovery from partial
-regional failures.
+We are designing a build-and-deployment system that takes source code from a
+trusted commit, builds and verifies it in an isolated environment, publishes an
+immutable release artifact, and safely promotes that artifact through
+environments and data centers. The platform should support reproducible builds,
+artifact signing, progressive delivery, policy gates, traffic shifting, health
+verification, rollback, auditability, and recovery from partial regional
+failures.
 
 The most important architectural split is:
 
-- **Global control plane:** Owns release identity, deployment intent, policy,
-  approvals, rollout plans, global state, audit, and cross-data-center
-  orchestration.
+- **Global control plane:** Owns build intent, release identity, deployment
+  intent, policy, approvals, rollout plans, global state, audit, and
+  cross-data-center orchestration.
+- **Build execution plane:** Owns source checkout, dependency resolution,
+  compile/test/package, security scanning, artifact signing, SBOM/provenance,
+  build logs, and artifact publishing.
 - **Regional execution plane:** Owns local rollout execution inside each data
   center: pulling artifacts, updating workloads, shifting local traffic,
   evaluating local health, and reporting status.
 
-The core design principle is: **a release is globally immutable, but deployment
-execution is regionally autonomous and idempotent.** WAN links, event delivery,
-regional controllers, and agents will fail. Correctness comes from durable
-deployment state, explicit state machines, regional leases, idempotent commands,
-and conservative safety gates.
+The core design principle is: **build once, publish an immutable artifact, then
+deploy that exact artifact everywhere.** Build workers, WAN links, event
+delivery, regional controllers, and agents will fail. Correctness comes from
+durable build and deployment state, content-addressed artifacts, explicit state
+machines, leases, idempotent commands, and conservative safety gates.
 
 ---
 
@@ -35,7 +40,10 @@ and conservative safety gates.
 
 ### In scope
 
-- Register immutable release artifacts and deployment manifests.
+- Trigger builds from SCM webhooks, manual requests, schedules, or APIs.
+- Checkout source at immutable commit SHAs.
+- Run isolated build, test, packaging, scan, signing, and provenance steps.
+- Publish immutable release artifacts and deployment manifests.
 - Create deployment plans across environments and data centers.
 - Support deployment waves, rings, canaries, blue/green, and rolling updates.
 - Enforce policy gates: approvals, freeze windows, branch/tag rules, change
@@ -49,10 +57,9 @@ and conservative safety gates.
 
 ### Non-goals
 
-- Building code from source. CI systems produce artifacts; this system deploys
-  them.
 - Source-code hosting.
-- General-purpose workflow orchestration for arbitrary business processes.
+- General-purpose workflow orchestration for arbitrary business processes not
+  related to build, release, or deployment.
 - Secret-manager internals. The deployment system requests scoped runtime
   credentials from an external secret manager.
 - Replacing Kubernetes, VM orchestration, service mesh, or load-balancer
@@ -66,6 +73,8 @@ and conservative safety gates.
 
 | Tenet | What it means |
 |-------|---------------|
+| Build once, deploy many | The same artifact digest is promoted across all data centers; production deploys never rebuild from source. |
+| Reproducible release inputs | Build records capture source commit, builder image, dependency lockfiles, config, and provenance. |
 | Immutable release identity | A deployment references artifact digests and manifest checksums, never mutable tags like `latest`. |
 | Separate intent from execution | Global plan creation is distinct from regional rollout attempts. |
 | Local autonomy under global policy | Regional controllers can reconcile approved work without synchronous dependency on the global orchestrator. |
@@ -81,8 +90,13 @@ and conservative safety gates.
 
 ### Functional requirements
 
-- Release registration with artifact digest, SBOM/provenance pointers, manifest
-  checksum, config version, and owner metadata.
+- Build trigger APIs with idempotency keys and SCM webhook deduplication.
+- Isolated build workers for checkout, compile, unit/integration tests,
+  packaging, vulnerability scans, license checks, SBOM generation, and artifact
+  signing.
+- Release creation after successful build with artifact digest,
+  SBOM/provenance pointers, manifest checksum, config version, and owner
+  metadata.
 - Deployment plan creation for one service, environment, version, and target
   data-center set.
 - Ordered and parallelizable deployment waves.
@@ -121,6 +135,8 @@ These are sizing inputs, not hard limits:
 | Dimension | Initial assumption | Design implication |
 |-----------|--------------------|--------------------|
 | Services | 10k services | Index release and plan data by tenant/service/environment. |
+| Builds | 1M build runs/month | Build metadata, logs, and artifacts need partitioning and retention. |
+| Concurrent builds | 10k build jobs | Build queues and worker pools need sharding by tenant, language, and trust level. |
 | Data centers | 5-50 targets | Model per-data-center state explicitly; avoid one large opaque deployment status. |
 | Deployments | 100k deployment plans/month | Partition history by tenant/environment/time. |
 | Concurrent regional deploys | 5k regional executions | Shard regional queues and controllers. |
@@ -143,26 +159,33 @@ These are sizing inputs, not hard limits:
        +---------------------------+---------------------------+
                                    |
                                    v
-       +-------------------------------------------------------+
-       | Global Deployment Control Plane                       |
-       | release registry, planner, orchestrator, policy,      |
-       | approvals, locks, audit, health-gate coordinator      |
-       +------------+----------------------+-------------------+
-                    |                      |
-                    v                      v
-       +------------------------+  +---------------------------+
-       | Metadata DB            |  | Event Bus / Outbox        |
-       | plans, waves, regional |  | regional commands, state  |
-       | states, locks, audit   |  | changes, notifications    |
-       +------------+-----------+  +-------------+-------------+
-                    |                            |
-                    |                            v
-                    |             +-----------------------------+
-                    |             | Artifact Registry / CDN     |
-                    |             | digests, signatures, SBOMs  |
-                    |             +-------------+---------------+
-                    |                           /|\
-                    v                            |
+      +-------------------------------------------------------+
+      | Global Build and Deployment Control Plane             |
+      | build orchestrator, release registry, planner,        |
+      | deployment orchestrator, policy, audit, health gates   |
+      +------------+----------------------+-------------------+
+                   |                      |
+                   v                      v
+      +------------------------+  +---------------------------+
+      | Metadata DB            |  | Event Bus / Outbox        |
+      | builds, releases,      |  | build commands, regional  |
+      | plans, locks, audit    |  | commands, state changes   |
+      +------------+-----------+  +-------------+-------------+
+                   |                            |
+                   |                            v
+                   |             +-----------------------------+
+                   |             | Build Queue / Build Workers |
+                   |             | checkout, test, package,    |
+                   |             | scan, sign, publish         |
+                   |             +-------------+---------------+
+                   |                           /|\
+                   |                            |
+                   |             +-------------+---------------+
+                   |             | Artifact Registry / CDN     |
+                   |             | digests, signatures, SBOMs  |
+                   |             +-------------+---------------+
+                   |                           /|\
+                   v                            |
        +-------------------------+       +-------+--------+
        | Regional Queue / Stream |<----->| Artifact Cache |
        +------------+------------+       +----------------+
@@ -189,6 +212,8 @@ These are sizing inputs, not hard limits:
 ### Core separation
 
 - The **global control plane** decides what should happen and in which order.
+- The **build execution plane** turns an immutable source commit into a signed,
+  content-addressed artifact and release record.
 - The **regional controller** decides how to converge local infrastructure to
   the approved desired state.
 - The **artifact plane** makes release bits available near the target data
@@ -202,21 +227,55 @@ These are sizing inputs, not hard limits:
 
 ### 6.1 Global API Gateway
 
-- Exposes APIs for release registration, plan creation, approval, rollout
-  status, pause/resume/cancel, rollback, and audit queries.
+- Exposes APIs for build trigger, build status, build logs, release lookup,
+  deployment plan creation, approval, rollout status, pause/resume/cancel,
+  rollback, and audit queries.
 - Validates identity, service ownership, environment permissions, and
   idempotency keys.
-- Verifies CI signatures, webhook signatures, and artifact provenance metadata.
+- Verifies SCM webhook signatures, CI/service principal identity, and artifact
+  provenance metadata.
 - Applies rate limits and request shaping by tenant and automation principal.
 
-### 6.2 Release Registry
+### 6.2 Build Orchestrator
+
+- Normalizes build triggers from SCM webhooks, manual requests, schedules, and
+  APIs.
+- Deduplicates by `(service_id, source_commit, build_profile, idempotency_key)`.
+- Creates durable build runs and build-step records before scheduling workers.
+- Selects build worker pools based on language/runtime, trust level, resource
+  size, and required tooling.
+- Tracks build leases, worker heartbeats, retries, logs, test results, and
+  terminal status.
+- Publishes a release record only after required build, test, scan, signing,
+  and provenance steps succeed.
+
+### 6.3 Build Workers
+
+- Run in isolated containers, VMs, or sandboxed runners.
+- Checkout source by immutable commit SHA, not branch head.
+- Resolve dependencies from controlled registries and cache layers.
+- Execute configured build pipeline stages:
+  - compile
+  - unit and integration tests
+  - package container/binary/archive
+  - vulnerability and license scans
+  - SBOM and provenance generation
+  - artifact signing
+  - artifact upload
+- Stream logs and structured test/scan results outside the primary metadata DB.
+- Use short-lived credentials scoped to source checkout, dependency download,
+  and artifact publish.
+
+### 6.4 Release Registry
 
 - Stores immutable release records:
   - service ID
+  - build run ID
   - artifact digest
   - manifest checksum
   - source commit
-  - CI build ID
+  - builder image digest
+  - dependency lockfile checksum
   - SBOM/provenance references
   - config schema version
   - migration metadata
@@ -225,7 +284,7 @@ These are sizing inputs, not hard limits:
 - Optionally supports release channels such as `candidate`, `stable`, or
   `emergency`, but channels point to immutable releases.
 
-### 6.3 Deployment Planner
+### 6.5 Deployment Planner
 
 - Converts a deployment request into a concrete deployment plan.
 - Expands target selectors such as `all-prod-us` into explicit data centers.
@@ -238,9 +297,9 @@ These are sizing inputs, not hard limits:
   rules.
 - Stores the plan before any regional action is emitted.
 
-### 6.4 Policy and Approval Service
+### 6.6 Policy and Approval Service
 
-- Evaluates deployability:
+- Evaluates buildability and deployability:
   - protected branch/tag
   - change ticket state
   - separation of duties
@@ -248,11 +307,12 @@ These are sizing inputs, not hard limits:
   - service owner approval
   - risk class
   - vulnerability/provenance checks
+  - required tests and scans passed
   - required pre-prod success
 - Produces signed policy decisions attached to the deployment plan.
 - Re-evaluates policy at promotion boundaries, not only at plan creation.
 
-### 6.5 Global Orchestrator
+### 6.7 Global Deployment Orchestrator
 
 - Advances a deployment plan through waves and target data centers.
 - Emits regional deployment commands through a transactional outbox.
@@ -265,7 +325,7 @@ These are sizing inputs, not hard limits:
   - policy changes invalidate the rollout
   - error budget or blast-radius threshold is exceeded
 
-### 6.6 Regional Deployment Controller
+### 6.8 Regional Deployment Controller
 
 - Runs inside or near each data center.
 - Pulls approved regional deployment intents from the regional queue or
@@ -283,7 +343,7 @@ These are sizing inputs, not hard limits:
 - Continues reconciliation after process restart.
 - Never invents new deployment intent; it only executes approved global plans.
 
-### 6.7 Deployment Agents and Platform Adapters
+### 6.9 Deployment Agents and Platform Adapters
 
 - Encapsulate platform-specific actions for Kubernetes, VMs, ECS, Nomad, or
   custom schedulers.
@@ -296,9 +356,11 @@ These are sizing inputs, not hard limits:
   - verify desired replica count
 - Report structured result codes instead of opaque logs only.
 
-### 6.8 Artifact Distribution
+### 6.10 Artifact Distribution
 
 - Stores artifacts by content digest, not mutable name.
+- Accepts artifacts only from trusted build workers or signed external import
+  paths.
 - Verifies signatures and checksums before release becomes deployable.
 - Replicates artifacts to regional caches before rollout.
 - Supports "pre-warm only" as a deployment step so missing artifacts fail before
@@ -306,7 +368,7 @@ These are sizing inputs, not hard limits:
 - Keeps artifact metadata in the deployment DB and artifact bytes in registry,
   object storage, or CDN.
 
-### 6.9 Traffic Manager
+### 6.11 Traffic Manager
 
 - Integrates with load balancers, DNS, service mesh, edge gateways, or routing
   control planes.
@@ -316,7 +378,7 @@ These are sizing inputs, not hard limits:
 - Keeps rollback fast by retaining the previous serving version until the new
   version is proven healthy.
 
-### 6.10 Health Gate Evaluator
+### 6.12 Health Gate Evaluator
 
 - Queries observability systems for the deployed service, version, region, and
   traffic slice.
@@ -336,18 +398,22 @@ These are sizing inputs, not hard limits:
   - `TIMED_OUT`
 - Treats inconclusive required gates as stop conditions for promotion.
 
-### 6.11 Metadata Store
+### 6.13 Metadata Store
 
-- Source of truth for release records, deployment plans, waves, regional
-  deployment state, leases, locks, approvals, health checks, traffic steps, and
-  audit events.
+- Source of truth for build pipelines, build runs, build steps, release records,
+  deployment plans, waves, regional deployment state, leases, locks, approvals,
+  health checks, traffic steps, and audit events.
 - Uses optimistic versioning for state transitions.
 - Partitions high-volume history by tenant, service, environment, and time.
 - Serves UI/API reads from indexed hot tables and read replicas.
 
-### 6.12 Audit Service
+### 6.14 Audit Service
 
 - Records all sensitive events:
+  - build trigger
+  - source checkout
+  - build worker assignment
+  - artifact publish
   - release registration
   - plan creation
   - policy decision
@@ -415,11 +481,42 @@ already-completed waves.
 
 ## 8. Public API Sketch
 
-### Register release
+### Trigger build
 
 ```
-POST /services/{serviceId}/releases
-Idempotency-Key: <ci-build-id-or-release-key>
+POST /services/{serviceId}/builds
+Idempotency-Key: <scm-delivery-id-or-client-generated-key>
+
+{
+  "source": {
+    "commit": "9f3a...",
+    "branch": "main",
+    "repo": "git@example.com:payments/api.git"
+  },
+  "buildProfile": "release",
+  "parameters": {
+    "runIntegrationTests": true
+  }
+}
+```
+
+Response:
+
+```
+{
+  "buildId": "bld_01H...",
+  "status": "QUEUED",
+  "statusUrl": "/services/payments-api/builds/bld_01H..."
+}
+```
+
+### Build completion publishes release
+
+This is usually emitted by a trusted build worker or internal build
+orchestrator, not by arbitrary clients.
+
+```
+POST /builds/{buildId}/artifacts
 
 {
   "artifact": {
@@ -427,12 +524,9 @@ Idempotency-Key: <ci-build-id-or-release-key>
     "digest": "sha256:abc123",
     "registry": "registry.example.com/payments/api"
   },
-  "source": {
-    "commit": "9f3a...",
-    "branch": "main",
-    "ciBuildId": "build_123"
-  },
   "manifestChecksum": "sha256:def456",
+  "builderImageDigest": "sha256:builder789",
+  "dependencyLockChecksum": "sha256:lock123",
   "provenanceRef": "slsa://...",
   "sbomRef": "s3://..."
 }
@@ -505,8 +599,24 @@ Service(service_id, tenant_id, name, owner_team, criticality, policy_id)
 
 DataCenter(data_center_id, region, compliance_zone, status, capacity_class)
 
-Release(release_id, service_id, artifact_digest, manifest_checksum,
-        source_commit, ci_build_id, provenance_ref, sbom_ref, status,
+BuildPipeline(pipeline_id, service_id, name, build_profile,
+              pipeline_definition_checksum, required_worker_labels,
+              created_at, version)
+
+BuildRun(build_id, service_id, pipeline_id, source_repo, source_commit,
+         source_branch, status, idempotency_key, worker_pool,
+         lease_id, queued_at, started_at, completed_at,
+         failure_code, failure_message)
+
+BuildStep(build_step_id, build_id, ordinal, step_type, status,
+          attempt, started_at, completed_at, evidence_ref)
+
+Artifact(artifact_id, build_id, artifact_type, digest, registry,
+         signature_ref, size_bytes, created_at)
+
+Release(release_id, service_id, build_id, artifact_id, artifact_digest,
+        manifest_checksum, source_commit, builder_image_digest,
+        dependency_lock_checksum, provenance_ref, sbom_ref, status,
         created_by, created_at)
 
 DeploymentPlan(deployment_id, service_id, release_id, environment,
@@ -543,7 +653,12 @@ AuditEvent(event_id, tenant_id, actor, action, resource_type, resource_id,
 
 ### Core invariants
 
+- `BuildRun.source_commit` is immutable after the build is queued.
+- A production release is created only from a successful build with required
+  tests, scans, signatures, and provenance.
 - `Release.artifact_digest` and `Release.manifest_checksum` are immutable.
+- `Release.source_commit` and `Release.build_id` identify exactly what code and
+  build produced the deployable artifact.
 - A deployment plan references exactly one desired release.
 - A regional deployment targets exactly one data center.
 - A data center has at most one active production deployment per
@@ -556,6 +671,23 @@ AuditEvent(event_id, tenant_id, actor, action, resource_type, resource_id,
 - Global promotion to the next wave requires all required gates in the current
   wave to pass.
 - Audit events are append-only.
+
+### Build state machine
+
+```
+QUEUED
+  -> LEASED
+  -> CHECKING_OUT
+  -> BUILDING
+  -> TESTING
+  -> SCANNING
+  -> SIGNING
+  -> PUBLISHING_ARTIFACT
+  -> RELEASED
+  -> FAILED
+  -> CANCELLED
+  -> TIMED_OUT
+```
 
 ### Deployment plan state machine
 
@@ -595,12 +727,34 @@ PENDING
 
 ## 10. Consistency and Transaction Boundaries
 
-### Release registration
+### Build trigger
 
-Release registration should validate artifact existence and signature before
-marking the release deployable. The release row and audit event should be
-committed together, or the audit event should be written through a transactional
-outbox.
+Build trigger should be a single durable operation:
+
+1. Validate source repo, branch/ref policy, and caller permission.
+2. Resolve the requested ref to an immutable commit SHA.
+3. Insert `BuildRun`, initial `BuildStep` rows, and audit event.
+4. Write an outbox event for build queue publication.
+
+Do not enqueue a build before the build run is durable. A crash after returning
+`buildId` must not create a build that can never be scheduled.
+
+### Artifact publication and release creation
+
+Build completion should publish the artifact and release atomically from the
+control plane's perspective:
+
+1. Build worker uploads artifact bytes to registry/object storage by digest.
+2. Build worker submits artifact digest, signature, SBOM, provenance, and scan
+   evidence.
+3. Control plane verifies digest, signature, required step success, and worker
+   lease.
+4. Insert `Artifact`, insert immutable `Release`, mark `BuildRun` as
+   `RELEASED`, and write audit/outbox events in one transaction.
+
+If artifact upload succeeds but metadata commit fails, the orphaned artifact is
+safe because it is not deployable without a release record. A garbage-collection
+job can later remove unreferenced artifacts.
 
 ### Plan creation
 
@@ -765,6 +919,11 @@ approval, separate status, and rollback/roll-forward instructions.
 
 | Failure | Detection | Mitigation |
 |---------|-----------|------------|
+| Duplicate build trigger | Same SCM delivery ID, commit/profile, or idempotency key | Return existing build run or dedupe according to service policy. |
+| Build worker dies | Missed heartbeat or expired build lease | Requeue build if retryable; fail if retry budget is exhausted. |
+| Compromised build worker | Invalid worker identity, signature, provenance, or unexpected output | Reject artifact publication; quarantine worker and artifacts. |
+| Artifact upload succeeds but release commit fails | Artifact exists without `Release` row | Artifact is not deployable; garbage collect unreferenced blobs. |
+| Scan or test infrastructure unavailable | Build step timeout or inconclusive evidence | Fail closed for production release creation. |
 | Duplicate deployment request | Same idempotency key or same release/environment/change ticket | Return existing plan or reject according to policy. |
 | Global API crash during plan creation | Incomplete transaction or missing outbox event | Single DB transaction plus outbox replay. |
 | Orchestrator split brain | Two orchestrators try to advance same wave | CAS on plan/wave version; sharding and leader election for efficiency. |
@@ -785,25 +944,32 @@ approval, separate status, and rollback/roll-forward instructions.
 
 ### Threat model
 
-The deployment system can mutate production. Attackers may try to deploy
-unauthorized artifacts, bypass approvals, exfiltrate secrets through deployment
-scripts, tamper with audit records, or route production traffic to compromised
-versions.
+The system can build code, publish deployable artifacts, and mutate production.
+Attackers may try to trigger unauthorized builds, poison dependencies, compromise
+build workers, publish unsigned artifacts, bypass approvals, exfiltrate secrets
+through build or deployment scripts, tamper with audit records, or route
+production traffic to compromised versions.
 
 ### Controls
 
-- Strong identity for humans, CI systems, regional controllers, and agents.
-- RBAC and ABAC by tenant, service, environment, data center, and action.
+- Strong identity for humans, SCM integrations, build workers, regional
+  controllers, and agents.
+- RBAC and ABAC by tenant, service, repository, environment, data center, and
+  action.
+- Isolated build sandboxes with clean workspaces and controlled dependency
+  registries.
+- Source checkout by immutable commit SHA with protected branch/tag policies.
 - Artifact signing and provenance verification before deployability.
 - Protected branch/tag rules for production releases.
 - Separation of duties for high-risk services.
-- Short-lived scoped credentials for regional execution.
-- No long-lived production credentials in deployment manifests.
-- Network policies limiting controller and agent access.
+- Short-lived scoped credentials for source checkout, artifact publication, and
+  regional execution.
+- No long-lived production credentials in build or deployment manifests.
+- Network policies limiting build worker, controller, and agent access.
 - Immutable audit log for production mutations.
 - Break-glass path with explicit reason, elevated approval, and high-priority
   alerting.
-- Secret redaction in logs and deployment events.
+- Secret redaction in build logs, deployment logs, and events.
 
 ---
 
@@ -811,6 +977,12 @@ versions.
 
 ### Golden signals
 
+- Build trigger rate and error rate.
+- Build queue depth and oldest build age by service/profile/worker pool.
+- Build duration and failure rate by step: checkout, build, test, scan, sign,
+  publish.
+- Build worker heartbeat lag and lease expiry count.
+- Artifact publish latency and signature/provenance verification failures.
 - Deployment request rate and error rate.
 - Plan creation latency.
 - Policy evaluation latency and failure reasons.
@@ -827,6 +999,8 @@ versions.
 
 ### Required dashboards
 
+- Build pipeline health by service and worker pool.
+- Build failure reasons and flaky test/scan trends.
 - Global deployment overview by environment.
 - Per-service deployment timeline.
 - Per-data-center deployment health.
@@ -838,6 +1012,9 @@ versions.
 
 ### Runbooks
 
+- Requeue or cancel a stuck build.
+- Quarantine a compromised build worker.
+- Revoke a bad release artifact before deployment.
 - Pause a global rollout.
 - Resume from a specific wave.
 - Roll back one data center.
@@ -857,7 +1034,9 @@ versions.
 
 | Data | Recovery expectation | Notes |
 |------|----------------------|-------|
-| Release metadata | Strong backup/restore | Needed for audit and rollback. |
+| Build metadata | Strong backup/restore for active and recent builds | Needed to prove release provenance. |
+| Build logs and evidence | Durable enough for audit policy | Heavy blobs should live outside the metadata DB. |
+| Release metadata | Strong backup/restore | Needed for audit, deploy, and rollback. |
 | Deployment plans | Strong backup/restore | Source of truth for desired state and history. |
 | Regional state | Recoverable from DB plus regional reconciliation | Controllers should be able to report observed state after restore. |
 | Audit events | High durability, tamper-evident | Compliance-sensitive. |
@@ -866,6 +1045,10 @@ versions.
 
 ### DR behavior
 
+- If build control plane fails, no new releases should be created until build
+  state and artifact publication can be reconciled.
+- After build-plane recovery, orphaned artifacts are reconciled against build
+  runs and release records before being made deployable.
 - If global control plane fails, regional controllers stop accepting new
   unapproved work.
 - Already-approved regional work may finish, pause, or locally rollback based on
@@ -882,7 +1065,8 @@ versions.
 
 | Decision | Choice | Rationale | Cost |
 |----------|--------|-----------|------|
-| Release identity | Immutable artifact digest | Deterministic deploys and rollback | Requires CI and registry discipline |
+| Build model | Build once, deploy many | Ensures every data center receives identical bits | Requires strong artifact provenance and reproducible inputs |
+| Release identity | Immutable artifact digest | Deterministic deploys and rollback | Requires build and registry discipline |
 | Execution model | Regional controllers | Survives WAN issues and lowers latency | More components to operate |
 | Promotion model | Global wave orchestration | Controls blast radius across data centers | Requires durable state machine |
 | Safety gates | Fail closed | Prevents unsafe promotion on missing evidence | Can pause good deploys during telemetry outages |
@@ -895,12 +1079,11 @@ versions.
 
 ## 19. Implementation Phases
 
-### Phase 1: Safe single-region foundation
-
-- Immutable release registry.
+- Build trigger API, build queue, and isolated build workers.
+- Artifact digest validation, signing, SBOM, and provenance capture.
+- Immutable release registry created from successful builds.
 - Deployment plans and regional deployment state machine.
 - One deployment strategy, such as rolling update.
-- Artifact digest validation.
 - Manual approval and audit log.
 - Basic pause, resume, cancel, and rollback.
 - Health gates from a small set of metrics.
@@ -923,7 +1106,7 @@ versions.
 - Emergency local rollback mode.
 - Advanced SLO burn-rate gates.
 - Change-management integration.
-- Stronger provenance and compliance retention.
+- Reproducible build enforcement and stronger compliance retention.
 
 ---
 
@@ -931,6 +1114,10 @@ versions.
 
 - Which deployment substrates must be supported first: Kubernetes, VM groups,
   ECS, or another platform?
+- Which languages/build systems need first-class build workers and cache
+  support?
+- Which build steps are required before a release becomes deployable: tests,
+  scans, signatures, SBOM, provenance, or manual certification?
 - Is the global metadata store single-writer, sharded-writer, or globally
   strongly consistent?
 - Which environments require human approval versus automated policy approval?
@@ -945,12 +1132,13 @@ versions.
 
 ## 21. Summary
 
-A principal-engineer-level multi-data-center deployment system is not just a
-button that runs scripts in many places. It is a distributed safety system. The
-design should make releases immutable, deployment intent durable, regional
+A principal-engineer-level build and multi-data-center deployment system is not
+just a button that runs scripts in many places. It is a distributed safety
+system. The design should make source inputs traceable, build execution
+isolated, release artifacts immutable, deployment intent durable, regional
 execution autonomous, state transitions idempotent, traffic exposure gradual,
 health gates explicit, rollback auditable, and failure modes operationally
-visible. The system is correct when it can answer, for every data center: what
-release is desired, what release is serving traffic, who approved it, which
-policy allowed it, what health evidence was used, and how to safely stop or
-reverse it.
+visible. The system is correct when it can answer: which commit and build
+produced the artifact, what release is desired in every data center, what
+release is serving traffic, who approved it, which policy allowed it, what
+health evidence was used, and how to safely stop or reverse it.
