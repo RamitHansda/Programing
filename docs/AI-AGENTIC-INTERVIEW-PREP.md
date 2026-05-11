@@ -611,6 +611,410 @@ Benefits:
    └── Approve or request changes
 ```
 
+### Q: Design an AI-powered SQL data analyst agent.
+
+**Requirements:** Natural language → run SQL queries → explain results; support multi-turn follow-ups.
+
+**Components:**
+```
+[User: "Show top 10 revenue products last quarter"]
+              ↓
+[Intent Parser Agent]
+   ├── Extract: metric=revenue, dimension=product, period=last_quarter
+   └── Classify: query type (aggregation, trend, anomaly)
+              ↓
+[Schema Context Injector]
+   ├── Tool: list_tables()
+   ├── Tool: describe_table(name) — columns, types, row counts
+   └── Injects minimal schema subset into LLM context
+              ↓
+[SQL Generator Agent]
+   ├── Generates parameterized SQL (no string interpolation)
+   ├── Tool: validate_sql(query) — dry-run EXPLAIN
+   └── If invalid: retry with error as observation (max 3 retries)
+              ↓
+[Executor + Sanitizer]
+   ├── Tool: run_query(sql, limit=1000) — read-only connection
+   ├── Truncates result set before injecting to LLM
+   └── Logs query + user for audit trail
+              ↓
+[Explainer Agent]
+   ├── Summarizes result in plain English
+   ├── Suggests follow-up questions
+   └── Offers chart type recommendation
+```
+
+**Key decisions:**
+- Read-only DB connection — agent can never mutate data
+- Schema is injected on-demand (not entire schema) — controls context size
+- SQL validated with `EXPLAIN` before execution — catches syntax errors cheaply
+- Multi-turn: store prior SQL + results in session state for follow-up refinement
+- Row-level security: inject `WHERE user_id = :current_user` at executor layer, not LLM layer
+
+**Guardrails:**
+- Block `DROP`, `DELETE`, `UPDATE`, `INSERT` at SQL parser level
+- Rate limit per user (e.g. 100 queries/hour)
+- PII columns masked in result before returning to LLM
+
+---
+
+### Q: Design an incident response (SRE) agent.
+
+**Requirements:** Detect production alert → investigate → propose or auto-apply remediation; page human if unsure.
+
+**Components:**
+```
+[PagerDuty / AlertManager webhook]
+              ↓
+[Alert Triage Agent]
+   ├── Parse: service, severity, error rate, affected region
+   ├── Tool: fetch_recent_deploys(service, window=1h)
+   ├── Tool: fetch_logs(service, last_n_lines=200)
+   ├── Tool: fetch_metrics(service, dashboards=["latency","error_rate","saturation"])
+   └── Classify: known pattern vs novel
+              ↓ (if known pattern)
+[Runbook Lookup]
+   ├── RAG over runbook docs: vector search for similar past incidents
+   ├── Returns: recommended remediation steps + confidence score
+              ↓
+[Remediation Agent]
+   ├── Low-risk actions (auto-approve):
+   │     ├── Tool: restart_pod(service, namespace)
+   │     └── Tool: scale_up(service, replicas=+2)
+   └── High-risk actions (human-in-the-loop):
+         ├── Tool: rollback_deploy(service, to_version)
+         └── Tool: toggle_feature_flag(flag_name, enabled=False)
+              ↓
+[Post-Incident Reporter]
+   ├── Summarize: timeline, root cause hypothesis, actions taken
+   └── Write to: incident Slack channel + Confluence page
+```
+
+**Key decisions:**
+- Action risk levels defined in a registry — not decided by LLM
+- Human approval triggered when: `confidence < 0.8` OR action is `high_risk`
+- LangGraph checkpointing: if agent crashes mid-investigation, resume from last checkpoint
+- Max investigation time cap (e.g. 10 min) before auto-page
+
+**Failure modes to handle:**
+- Logs too large for context window → summarize with sliding window or keyword grep tool
+- Runbook not found → fall back to LLM reasoning + mandatory human review
+- Circular remediation → detect repeated tool calls to same action, break loop
+
+---
+
+### Q: Design a legal document review agent.
+
+**Requirements:** Given a contract, flag risky clauses, summarize obligations, compare to company standard template.
+
+**Components:**
+```
+[Document Upload (PDF/DOCX)]
+              ↓
+[Parser + Chunker]
+   ├── Extract text, preserve section structure (headings, numbering)
+   ├── Chunk by clause (semantic splitter on legal sentence boundaries)
+   └── Store chunks + metadata (section, page) in per-session vector store
+              ↓
+[Risk Classifier Agent] (parallel per clause)
+   ├── Prompt: "Is this clause: standard / favorable / risky / missing?"
+   ├── Tool: compare_to_template(clause_text) — RAG over standard template
+   └── Output: {clause_id, risk_level, reason, suggested_redline}
+              ↓
+[Aggregator Agent]
+   ├── Group findings by risk level
+   ├── Generate executive summary (3–5 bullets)
+   └── Produce redline diff (original vs suggested)
+              ↓
+[Output: Structured Report]
+   ├── Risk heatmap by section
+   ├── Per-clause findings with confidence scores
+   └── Required actions + optional lawyer review flag
+```
+
+**Key decisions:**
+- Parallel clause evaluation → fan-out pattern (multiple agent calls concurrently)
+- Confidence score < 0.7 → flag for mandatory human lawyer review
+- All LLM outputs grounded in: retrieved template clause + exact contract quote (citations required)
+- No external API calls — document is confidential; model runs on-premises or private VPC endpoint
+- Output schema enforced with Pydantic (`ClauseReview`, `ContractReport`) — no free-form text
+
+**Scaling:**
+- Large contracts (200+ pages): process in parallel batches; merge summaries in a final aggregation pass
+
+---
+
+### Q: Design a personalized AI tutoring agent.
+
+**Requirements:** Adapt to a student's knowledge level, track progress across sessions, generate exercises, evaluate answers.
+
+**Components:**
+```
+[Student Message]
+              ↓
+[Diagnostic Agent] (first session only)
+   ├── Adaptive quiz: asks 5–10 questions, adjusts difficulty per answer
+   └── Produces: knowledge profile {topic → mastery_level: 0–5}
+              ↓
+[Session Planner Agent]
+   ├── Retrieves: student profile from long-term memory (vector + key-value store)
+   ├── RAG over: curriculum content for current topic
+   └── Generates: lesson plan for this session (concept → worked example → exercise)
+              ↓
+[Teaching Agent]
+   ├── Explains concept at student's level (mastery-aware prompt)
+   ├── Tool: generate_exercise(topic, difficulty, type) → problem statement
+   └── Evaluates student answer:
+         ├── Correct: update mastery +1, move to harder concept
+         └── Wrong: explain error, generate similar problem, retry
+              ↓
+[Progress Tracker]
+   ├── Appends session summary to episodic memory
+   ├── Updates mastery profile in key-value store
+   └── Triggers: "badge earned" if mastery = 5 for a topic
+```
+
+**Key decisions:**
+- Mastery profile stored externally (not in-context) — persists across sessions
+- At session start: retrieve profile + last 3 session summaries to restore context efficiently
+- Exercise generation uses structured output: `{problem, answer_key, hints[], difficulty}`
+- Student answer evaluation uses a dedicated grader LLM call (separate from teaching LLM) — separation of concerns
+- Younger students: add content guardrail to block off-topic or age-inappropriate responses
+
+---
+
+### Q: Design an e-commerce shopping and purchasing agent.
+
+**Requirements:** User describes a need → agent researches products, compares options, places order with user approval.
+
+**Components:**
+```
+[User: "Buy me noise-cancelling headphones under $200, for commuting"]
+              ↓
+[Requirement Extractor]
+   ├── Structured output: {category, max_price, use_case, constraints}
+   └── Clarification loop if ambiguous (max 1 round)
+              ↓
+[Research Agent]
+   ├── Tool: search_catalog(query, filters={price_max: 200, category: "headphones"})
+   ├── Tool: fetch_product_details(product_id) — specs, reviews, stock
+   ├── Tool: fetch_reviews_summary(product_id) — sentiment analysis pre-aggregated
+   └── Produces: top-3 candidates with pros/cons
+              ↓
+[Comparison Agent]
+   ├── Structured comparison table: {model, price, ANC quality, battery, weight}
+   ├── Recommendation with rationale grounded in specs
+   └── Confidence score per recommendation
+              ↓
+[Human Approval Checkpoint] ← ALWAYS required for purchase
+   ├── Present comparison to user
+   └── User selects or asks to modify criteria
+              ↓
+[Purchase Agent] (post-approval only)
+   ├── Tool: add_to_cart(product_id, qty=1)
+   ├── Tool: apply_best_coupon(cart_id) — automatic discount lookup
+   ├── Tool: get_checkout_summary(cart_id) — final price, delivery date
+   ├── Second human confirmation: show final price + delivery ETA
+   └── Tool: place_order(cart_id, payment_method_id) → order_id
+              ↓
+[Order Tracker Agent]
+   ├── Tool: get_order_status(order_id)
+   └── Proactive notification on shipping events
+```
+
+**Key decisions:**
+- `place_order` is always gated behind two human confirmations — irreversible action
+- Agent cannot store payment credentials — `payment_method_id` looked up from secure vault, not LLM context
+- Product search results are grounded data — LLM must cite product IDs, not hallucinate specs
+- Budget enforcement: hardcoded in tool layer (`price_max` is not LLM-settable by user instruction)
+
+---
+
+### Q: Design a multi-agent content moderation system.
+
+**Requirements:** User-generated content (text + images) → classify → action (approve / remove / escalate) at scale.
+
+**Components:**
+```
+[Content Submission (text + optional image)]
+              ↓
+[Fast Triage Agent] — cheap, low-latency (gpt-4o-mini or fine-tuned classifier)
+   ├── Binary: obviously safe OR needs review
+   └── Obviously safe (confidence > 0.98): approve immediately (no LLM cost)
+              ↓ (needs review)
+[Parallel Specialist Agents] — fan-out
+   ├── Toxicity Agent: hate speech, harassment, threats
+   ├── NSFW Agent: explicit content (VLM if image attached)
+   ├── Spam/Scam Agent: phishing, fake promotions, bot patterns
+   └── Misinformation Agent: RAG over fact-check DB for viral claims
+              ↓
+[Aggregator / Policy Engine]
+   ├── Combines signals: {agent → {score, category, evidence}}
+   ├── Policy rules (code, not LLM): if any score > 0.9 → remove
+   ├── If scores conflict or all in [0.5, 0.9] → escalate to human
+   └── Audit log: all scores + evidence written to immutable store
+              ↓
+[Action Executor]
+   ├── approve → publish
+   ├── remove → soft-delete + notify user + store reason
+   └── escalate → route to human moderator queue with evidence package
+```
+
+**Key decisions:**
+- Policy rules are deterministic code — LLM provides scores, humans/code make final decisions
+- Two-tier routing: cheap model first → specialist LLMs only for ambiguous content (cost control)
+- Evidence required: every removal must cite specific content + rule violated (legal compliance)
+- Latency: fast triage < 200ms; full pipeline < 5s p95
+- Horizontal scaling: content submissions go to a queue (SQS/Kafka); workers pull and process independently
+
+**Failure modes:**
+- Specialist agent timeout → partial signals → escalate to human (never auto-approve on partial data)
+- Model version drift → A/B eval new model vs current on holdout set before rollout
+
+---
+
+### Q: Design an autonomous code review agent.
+
+**Requirements:** Given a pull request diff, generate inline comments, identify bugs, suggest improvements, estimate risk.
+
+**Components:**
+```
+[PR Webhook: opened / updated]
+              ↓
+[Context Fetcher]
+   ├── Tool: get_pr_diff(pr_id) — file-by-file hunks
+   ├── Tool: get_pr_description(pr_id) — title, description, linked issue
+   ├── Tool: get_changed_files_context(files) — fetch ±50 lines around each hunk
+   └── Tool: get_test_coverage_delta(pr_id) — coverage increase/decrease
+              ↓
+[Risk Classifier Agent]
+   ├── Classify PR risk: low / medium / high
+   │     ├── High: touches auth, payments, data migrations, public API
+   │     └── Low: docs, config, test-only
+   └── Determines review depth (fast vs thorough)
+              ↓
+[Parallel Review Agents] — one per changed file
+   ├── Bug Detector: logic errors, off-by-one, null pointer risks
+   ├── Security Scanner: SQL injection, XSS, secrets in code, OWASP Top 10
+   ├── Style / Best Practice: naming, complexity, duplication (via AST tool)
+   └── Test Coverage: untested paths, missing edge cases
+              ↓
+[Aggregator Agent]
+   ├── Deduplicate overlapping comments
+   ├── Rank by severity (blocking / warning / suggestion)
+   ├── Generate PR-level summary: risk score, key concerns, approval recommendation
+   └── Auto-approve if: low risk + no blocking issues + coverage delta >= 0
+              ↓
+[GitHub Comment Writer]
+   ├── Tool: post_inline_comment(file, line, body)
+   ├── Tool: post_pr_summary_comment(body)
+   └── Tool: request_changes(reason) OR approve_pr()
+```
+
+**Key decisions:**
+- File-level parallelism → fan-out pattern; results merged in aggregator
+- Context window managed: inject only diff hunk + surrounding context (not full file) per agent
+- Security findings always block approval — hardcoded policy, not LLM decision
+- Auto-approve only when all conditions are deterministically met; LLM cannot override
+
+---
+
+### Q: Design a meeting assistant agent (real-time + async).
+
+**Requirements:** Join meetings, transcribe, extract action items, update project management tools, send follow-ups.
+
+**Components:**
+```
+[Meeting Starts (Zoom/Meet webhook)]
+              ↓
+[Real-Time Transcription]
+   ├── Audio stream → Speech-to-text (Deepgram / Whisper streaming)
+   └── Speaker diarization (who said what)
+              ↓ (post-meeting or streaming)
+[Summarizer Agent]
+   ├── Chunk transcript into 5-min segments (fits context window)
+   ├── Per-chunk: extract {decisions, blockers, questions, action items}
+   └── Merge chunks into final structured summary
+              ↓
+[Action Item Extractor Agent]
+   ├── Structured output: [{assignee, task, due_date, priority}]
+   ├── Assignee resolution: map name → Jira/Slack user ID via lookup tool
+   └── Ambiguous assignees flagged for human confirmation
+              ↓ (parallel)
+[Project Management Sync]
+   ├── Tool: create_jira_ticket(summary, assignee, due_date)
+   ├── Tool: update_existing_ticket(ticket_id, comment)
+   └── Tool: post_slack_summary(channel, summary)
+              ↓
+[Follow-Up Email Agent]
+   ├── Draft personalized follow-up per attendee (only their action items)
+   ├── Human review checkpoint: creator approves before send
+   └── Tool: send_email(to, subject, body)
+```
+
+**Key decisions:**
+- Long transcripts (1h meeting ≈ 15K tokens) exceed single-pass context → hierarchical summarization
+- Action item schema enforced with Pydantic before writing to Jira — prevents malformed tickets
+- PII handling: transcript stored encrypted at rest; deleted after 30 days per retention policy
+- Latency: async pipeline (not blocking); user gets summary within 5 min of meeting end
+
+---
+
+### Q: Design a multi-agent financial report generation system.
+
+**Requirements:** Given a company ticker, produce a comprehensive investment research report with quantitative and qualitative analysis.
+
+**Architecture:**
+```
+[User: "Generate report for NVDA"]
+              ↓
+[Orchestrator Agent]
+   ├── Breaks into parallel research workstreams:
+   │     ├── Financial Data Agent
+   │     ├── News & Sentiment Agent
+   │     ├── Competitor Analysis Agent
+   │     └── Risk Assessment Agent
+   └── Waits for all to complete (fan-out/fan-in)
+
+[Financial Data Agent]
+   ├── Tool: fetch_financials(ticker, periods=8) — income, balance sheet, cash flow
+   ├── Tool: compute_ratios(financials) — P/E, EV/EBITDA, gross margin trends
+   └── Output: {key_metrics, trend_analysis, peer_comparison_data}
+
+[News & Sentiment Agent]
+   ├── Tool: fetch_news(ticker, last_n_days=90)
+   ├── Sentiment classification per article (bullish/neutral/bearish)
+   └── Output: {sentiment_score, key_themes, notable_events}
+
+[Competitor Analysis Agent]
+   ├── Tool: fetch_peer_group(ticker) → [AMD, INTC, QCOM]
+   ├── Parallel: Financial Data Agent runs for each peer
+   └── Output: competitive positioning matrix
+
+[Risk Assessment Agent]
+   ├── RAG over SEC filings (10-K risk factors section)
+   ├── Macro risk overlay (interest rates, geopolitical)
+   └── Output: {risk_factors[], risk_score: low/medium/high}
+
+              ↓ (all agents complete)
+[Report Writer Agent]
+   ├── Synthesizes all agent outputs
+   ├── Structured template: Executive Summary → Financials → Risks → Outlook
+   ├── All claims must cite source agent output (grounded, no hallucination)
+   └── Confidence score per section; low-confidence sections flagged
+
+[Compliance Checker Agent]
+   ├── Validates: no material non-public information (MNPI) references
+   ├── Adds required disclaimers
+   └── Approves or blocks publication
+```
+
+**Key decisions:**
+- Fan-out parallelism reduces wall-clock time from N×sequential to ~1×longest agent
+- Each agent outputs structured JSON → type-safe aggregation in orchestrator
+- No financial data fabricated: every number must come from a tool result (citations tracked)
+- Compliance agent is a mandatory final gate — cannot be bypassed by orchestrator
+
 ---
 
 ## 14. Behavioral & Deep-Dive Questions
