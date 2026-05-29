@@ -43,7 +43,7 @@ Key facts to weave into conversation:
 
 This is **not a standard backend engineer role.** DualEntry uses the word "hardcore" deliberately. The explicit job description says:
 
-- **9am–9pm, 6 days per week** — they mean it
+- **12 hours a day (9am–9pm), 6 days per week** — they mean it; this is 72 hours/week
 - Full end-to-end ownership: you design it, build it, deploy it, monitor it, fix it
 - No hand-offs, no support teams to delegate to
 - Founders and Santiago Nestares (co-founder/CEO) are hands-on and will be in your interviews
@@ -163,13 +163,13 @@ This is not a "tell me about a time you showed teamwork" STAR round. DualEntry i
 
 ---
 
-### Q4. Why do you want to work 9am–9pm, 6 days per week?
+### Q4. Why do you want to work 12 hours a day, 6 days a week?
 
-**This is a direct filter question.** They're not looking for someone who wants work-life balance. Don't try to soften or hedge this.
+**This is a direct filter question.** The role is explicitly 9am–9pm, 6 days per week — 72 hours a week. They are not looking for someone who wants work-life balance. Do not soften or hedge this in any way.
 
-> "Honestly, I thrive in environments like this. The people who build category-defining companies aren't working 40-hour weeks — they're obsessed. I've had stretches in my career where I've worked this kind of schedule not because I had to, but because the problem was so interesting I didn't want to stop. DualEntry is at that inflection point — AI-native ERP is a 30-year category that nobody has cracked yet. If there's ever a time to go all in, it's now."
+> "Honestly, I thrive in environments like this. The people who build category-defining companies aren't working 40-hour weeks — they're obsessed. I've had stretches in my career where I've worked 12-hour days not because I had to, but because the problem was so interesting I didn't want to stop. DualEntry is at that inflection point — AI-native ERP is a 30-year category that nobody has cracked yet. If there's ever a time to go all in, it's now."
 
-**Red line:** Do not say "I value work-life balance" or "I'll adjust my habits." This is a hard filter.
+**Red line:** Do not say "I value work-life balance," "I'll adjust my habits," or "I'm comfortable working long hours when needed." They want unconditional alignment, not flexibility. This is a hard filter and they will walk away from strong technical candidates who hedge here.
 
 ---
 
@@ -617,7 +617,7 @@ Ask these thoughtfully — they signal you're thinking like an owner, not a cand
 
 | What you might say | Why it lands wrong | What to say instead |
 |---|---|---|
-| "I prefer working sustainable hours" | Hard disqualifier — the JD says 9am–9pm, 6 days | "I thrive in high-intensity environments — I do my best work when the stakes are high" |
+| "I prefer working sustainable hours" | Hard disqualifier — this is 72 hours/week, 12h/day, 6 days; they expect unconditional alignment | "I thrive in high-intensity environments — I do my best work when the stakes are high and the hours are long" |
 | "I like to consult with the team before making technical decisions" | Signals low agency | "I move fast and bring teammates in when I need a second opinion, but I don't wait for consensus to start" |
 | "I read about ASC 606 / revenue recognition" | They'll probe and the gap shows | Either know it deeply or say "I don't have domain depth here yet, but I pick up domain knowledge fast — here's an example" |
 | "We used microservices at my last company" | Fine if you can justify it; red flag if it sounds like a default | Lead with the *problem* microservices solved, not the architecture pattern |
@@ -660,7 +660,7 @@ Ask these thoughtfully — they signal you're thinking like an owner, not a cand
 | Their value | Your proof point to have ready |
 |---|---|
 | Move fast | "Shipped [feature] in [N days] — here's what I cut and why" |
-| Work hard | "I've operated at [schedule] before — it's the mode I naturally go into on hard problems" |
+| Work hard | "I've done 12-hour days, 6 days a week before — it's the mode I naturally go into on hard problems, not something I have to force" |
 | Be relentless | "When [system] went down at 2am, I stayed on it until [time] — here's what I did" |
 | Play to win | "At [Company], I chose [approach] because it was the best outcome for the customer, even though it was harder for engineering" |
 
