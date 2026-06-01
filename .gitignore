@@ -2,3 +2,4 @@ out/
 .idea/
 target/*
 .vscode/*
+job-matching-platform/**/__pycache__/

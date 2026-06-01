@@ -1,0 +1,21 @@
+# Core
+numpy>=1.24
+# Kafka messaging
+kafka-python>=2.0.2
+# Redis dedup + rate-limiting
+redis>=4.6.0
+# Vector embeddings (optional — falls back to hash stub if absent)
+sentence-transformers>=2.2.2
+# ANN index (optional — falls back to NumPy brute-force if absent)
+faiss-cpu>=1.7.4
+# Email providers (install one)
+sendgrid>=6.11.0
+boto3>=1.28.0
+# Templating
+Jinja2>=3.1.2
+# Database (production use)
+SQLAlchemy>=2.0
+psycopg2-binary>=2.9.6
+# Testing
+pytest>=7.4
+pytest-asyncio>=0.21
