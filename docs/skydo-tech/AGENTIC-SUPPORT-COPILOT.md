@@ -131,6 +131,56 @@ That stance drives the main boundaries:
          [SLA Timer Reset]
 ```
 
+### Mermaid Architecture Diagram
+
+```mermaid
+flowchart TB
+    User["Customer / Support Ticket"] --> CRM["Freshdesk / Zendesk / Chat"]
+    CRM --> Ingest["Webhook Ingestion<br/>Normalize + trace ID"]
+    Ingest --> Mask["PII Masking<br/>Presidio + custom recognizers"]
+    Mask --> Triage["Intent Classifier<br/>Intent + confidence + urgency"]
+    Triage --> Risk{"Risk route"}
+    Risk -->|Sensitive or low confidence| HumanQueue["Human Queue"]
+    Risk -->|Eligible intent| Orchestrator["LangGraph Orchestrator"]
+
+    subgraph EvidencePlane["Evidence Plane"]
+        Knowledge["Policy / FAQ / Resolved Tickets"] --> Retriever["Hybrid Retrieval<br/>BM25 + Vector"]
+        DomainAPIs["Read-only Domain APIs<br/>Account / Txn / KYC / FX"] --> ToolExec["Tool Executor<br/>Typed schemas"]
+    end
+
+    Orchestrator --> Retriever
+    Orchestrator --> ToolExec
+    Retriever --> Draft["Draft Response<br/>Sources + evidence"]
+    ToolExec --> Draft
+    Draft --> PolicyGuard["Policy + PII Guardrails"]
+    PolicyGuard --> SendDecision{"Can auto-send?"}
+    SendDecision -->|No| HumanQueue
+    SendDecision -->|Yes| CustomerReply["Customer Reply"]
+    HumanQueue --> HITL["HITL Review<br/>Approve / edit / reject"]
+    HITL --> CustomerReply
+
+    CustomerReply --> Audit["Immutable Audit Log"]
+    PolicyGuard --> Audit
+    Orchestrator --> Audit
+    HITL --> Audit
+
+    subgraph ControlPlane["Control Plane"]
+        PromptRegistry["Prompt Registry"]
+        ModelRoute["Model Gateway Config"]
+        Thresholds["Thresholds + Intent Allowlist"]
+        PolicyVersion["Policy Version Pointer"]
+        EvalGates["Golden-set Eval Gates"]
+        KillSwitch["Auto-send Kill Switch"]
+    end
+
+    PromptRegistry -. prompts .-> Orchestrator
+    ModelRoute -. routes .-> Orchestrator
+    Thresholds -. gates .-> SendDecision
+    PolicyVersion -. versions .-> Retriever
+    EvalGates -. promotes .-> SendDecision
+    KillSwitch -. disables .-> SendDecision
+```
+
 ### Control Plane vs Runtime Plane
 
 A principal-level implementation should split "how a ticket is processed now" from "who is allowed to change how the system behaves."
@@ -1187,6 +1237,50 @@ async def send_response_to_crm(ticket_id: str, response: str, pii_map: dict):
 15. Resume LangGraph → send final response
 16. Audit log written (all events, immutable, 90-day TTL)
 17. SLA timer reset on CRM
+```
+
+### Mermaid Runtime Sequence
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant CRM as CRM / Chat
+    participant Ingest as Ingestion
+    participant Mask as PII Masker
+    participant Triage as Triage Classifier
+    participant Agent as Orchestrator Agent
+    participant RAG as Hybrid RAG
+    participant Tools as Read-only Tools
+    participant Guard as Policy Guard
+    participant HITL as Human Review
+    participant Audit as Audit Log
+
+    CRM->>Ingest: New ticket webhook
+    Ingest->>Mask: Normalize ticket and assign trace ID
+    Mask-->>Ingest: Masked body + encrypted PII map
+    Ingest->>Triage: Classify intent, urgency, confidence
+
+    alt Sensitive, explicit escalation, or low confidence
+        Triage->>HITL: Route directly to human queue
+        HITL->>Audit: Record human-owned routing decision
+    else Eligible for agent handling
+        Triage->>Agent: Start LangGraph thread
+        Agent->>RAG: Retrieve source-attributed policy context
+        RAG-->>Agent: Evidence chunks + document versions
+        Agent->>Tools: Fetch account / transaction / KYC / FX state
+        Tools-->>Agent: Fresh read-only facts with timestamps
+        Agent->>Guard: Submit draft response and evidence
+        Guard-->>Agent: Policy result + PII result
+
+        alt Passes policy and auto-send gates
+            Agent->>CRM: Send final response through CRM
+            Agent->>Audit: Record model, prompt, evidence, tool calls, policy version
+        else Fails gate or needs judgment
+            Agent->>HITL: Pause for approve / edit / reject
+            HITL->>CRM: Send reviewed response
+            HITL->>Audit: Record reviewer action and final text
+        end
+    end
 ```
 
 ---
