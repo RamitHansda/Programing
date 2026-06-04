@@ -1,6 +1,6 @@
-# Agentic Support Copilot — Build Guide
+# Agentic Support Copilot — Principal Engineer Design & Build Guide
 
-> **Context:** This document covers the architecture, component-by-component implementation, and operational setup for the Agentic Support Copilot built at Skydo. The system uses a **hybrid RAG + read-only tool-calling** architecture with human-in-the-loop (HITL) approvals, PII masking, policy checks, and audit logs. Outcomes: ~65% auto-triage, ~35–40% assisted/auto resolution, first-response time reduced from ~90 min → ~10–12 min, SLA breaches down ~50%.
+> **Context:** This document covers the principal-engineer design, component-by-component implementation, and operational setup for the Agentic Support Copilot built at Skydo. The system uses a **hybrid RAG + read-only tool-calling** architecture with human-in-the-loop (HITL) approvals, PII masking, policy checks, and audit logs. Outcomes: ~65% auto-triage, ~35–40% assisted/auto resolution, first-response time reduced from ~90 min → ~10–12 min, SLA breaches down ~50%.
 
 ---
 
@@ -27,6 +27,64 @@
 ---
 
 ## 1. System Overview & Architecture
+
+### Principal Engineering Frame
+
+This should not be framed as "put an LLM in the support queue." At principal-engineer scope, the design problem is to create a **trusted support automation platform** that can safely absorb repetitive support demand while preserving customer trust, compliance posture, and the support team's ability to intervene.
+
+The core architectural stance is:
+
+> Keep all irreversible customer-impacting decisions outside the autonomous loop until the system has earned trust through measured, auditable behavior.
+
+That stance drives the main boundaries:
+
+- The agent can **read** operational state, but cannot mutate account, payment, KYC, or refund state.
+- The system can draft and route, but auto-send is restricted by confidence, policy, intent class, and rollout gates.
+- Compliance, PII masking, audit, and HITL are not sidecars; they are part of the product contract.
+- Thresholds, allowed intents, prompts, policy versions, and model versions must be independently configurable from application deploys.
+
+### Business Outcome and Non-Goals
+
+| Area | Principal-level framing |
+|---|---|
+| Business outcome | Reduce first-response latency and support backlog without increasing regulatory, payment, or customer-trust risk |
+| Primary users | Customers waiting for answers; support agents reviewing drafts; operations/compliance teams auditing decisions |
+| Non-goal | Fully autonomous support agent that can refund, change KYC status, unblock accounts, or override policy |
+| Platform bet | Build a reusable safe-agent substrate for future operations workflows: disputes, onboarding, reconciliation, and internal ops copilots |
+| Failure posture | Prefer over-escalation to humans over incorrect auto-resolution; user trust is more valuable than marginal automation |
+
+### Non-Negotiable Requirements
+
+| Requirement | Why it is non-negotiable | Design consequence |
+|---|---|---|
+| No customer PII in model logs | Cross-border payments data is sensitive and regulated | PII masking before every LLM call; original text encrypted and scoped to CRM write-back |
+| No autonomous money movement | A bad action can create financial loss or compliance breach | Tool layer is read-only by IAM, DB grants, and application schema |
+| Every decision is reconstructable | Compliance and incident review require traceability | Append-only audit log with prompt, retrieved evidence, tool calls, model version, policy version, and human action |
+| Human override is always available | Support remains accountable for customer communication | HITL pause/resume with approve, edit, reject, and force-escalate paths |
+| Rollout is reversible | Model quality, policy drift, or vendor incidents can regress quickly | Runtime kill switch for auto-send, threshold tuning via SSM, and intent allowlist |
+
+### Principal Design Principles
+
+| Principle | Architectural consequence |
+|---|---|
+| Trust is earned through evidence | Start in shadow mode, compare against human responses, and only expand auto-send after offline and live gates pass |
+| Separate policy from reasoning | The LLM may propose; deterministic and policy-checking layers decide whether a response can leave the system |
+| Control plane is separate from runtime | Prompts, thresholds, allowed intents, policy versions, model routes, and eval gates are controlled without redeploying workers |
+| Retrieval must be source-attributed | Every answer shown to a human or customer carries evidence snippets and document versions |
+| Blast radius is bounded by intent | Low-risk FAQ and FX questions can auto-resolve; compliance, refunds, blocked accounts, and explicit escalation stay human-owned |
+| Operations are first-class | Queue depth, cost, latency, approval rate, edit distance, policy failures, and rollback levers are designed up front |
+
+### Domain Boundaries and Ownership
+
+| Boundary | Owns | Contract | Why this seam matters |
+|---|---|---|---|
+| Ticket ingestion | Support platform | Normalized ticket, masked body, PII map, trace ID | Isolates CRM/webhook differences from agent logic |
+| Triage and routing | Support automation | Intent, confidence, urgency, route | Lets support ops tune automation policy without changing the agent |
+| Knowledge retrieval | Knowledge/platform team | Authorized evidence chunks with source and version | Prevents prompt-only knowledge and supports policy freshness |
+| Tool execution | Domain service owners | Read-only APIs with typed schemas and SLAs | Keeps account, payment, KYC, and FX systems authoritative |
+| Policy guardrails | Compliance + engineering | Pass/fail, violated rule, required escalation | Makes compliance a release gate, not a post-processing suggestion |
+| HITL workflow | Support operations | Review state, decision, edit, final response | Preserves human accountability and produces training signal |
+| Audit and evaluation | Platform governance | Immutable event stream and eval datasets | Enables incident response, model comparison, and governance |
 
 ### High-Level Flow
 
@@ -73,7 +131,36 @@
          [SLA Timer Reset]
 ```
 
-### Design Principles
+### Control Plane vs Runtime Plane
+
+A principal-level implementation should split "how a ticket is processed now" from "who is allowed to change how the system behaves."
+
+```
+Runtime plane
+  Ticket -> Mask -> Triage -> Retrieve -> Tool calls -> Draft -> Policy check -> HITL/Auto-send
+
+Control plane
+  Prompt registry
+  Model routing config
+  Intent allowlist
+  Confidence thresholds
+  Policy version pointer
+  Evaluation gates
+  Rollout stage and kill switches
+```
+
+| Plane | Changes frequently? | Owner | Release mechanism |
+|---|---:|---|---|
+| Runtime worker code | Low to medium | Support automation engineering | CI/CD deployment |
+| Prompt templates | Medium | Engineering + support ops | Versioned prompt registry with eval gate |
+| Policy documents | Medium | Compliance + support ops | S3 version + active pointer in DynamoDB |
+| Auto-send thresholds | High during rollout | Support ops + engineering | SSM Parameter Store, no redeploy |
+| Intent allowlist | Medium | Support leadership + compliance | Config change with approval |
+| Model/provider route | Medium | Platform engineering | Model gateway config with fallback |
+
+This split keeps the operating team from needing a code deploy for every threshold or policy change, while still requiring eval and approval for changes that alter customer-visible behavior.
+
+### Implementation Design Principles
 
 | Principle | Decision |
 |---|---|
@@ -82,6 +169,7 @@
 | **Confidence-gated** | Only auto-send when classifier confidence ≥ threshold |
 | **PII-first** | Mask PII before any LLM call; unmask only in final CRM write |
 | **Audit everything** | Every LLM call, tool call, decision, and human action is logged with trace ID |
+| **Configurable rollout** | Auto-send threshold, allowed intents, and model routes are runtime config, not hardcoded releases |
 
 ---
 
@@ -97,7 +185,11 @@
 | **Keyword Search** | BM25 via Elasticsearch | Exact policy keyword matching, phrase search |
 | **PII Detection** | Microsoft Presidio | Configurable recognizers, custom Skydo entities (account IDs, IFSC) |
 | **Policy Store** | S3 + DynamoDB | Policies versioned in S3; active version pointer in DynamoDB |
+| **Prompt Registry** | S3 versioned objects + DynamoDB metadata | Prompt changes are versioned, reviewable, and tied to eval results |
+| **Model Gateway** | Thin internal routing layer | Centralizes provider fallback, token budgets, latency tracking, and model-route changes |
+| **Control Config** | AWS SSM Parameter Store | Runtime thresholds, intent allowlists, and kill switches change without redeploy |
 | **Audit Log** | DynamoDB + CloudWatch | Immutable append-only log; CloudWatch for alerting |
+| **Evaluation Store** | S3 + Athena / warehouse table | Golden-set results, shadow comparisons, and live review signals are queryable over time |
 | **Job Queue** | SQS + Lambda | Async ticket processing; decouple intake from agent execution |
 | **HITL Interface** | Internal Retool dashboard | Agents see draft + evidence; approve/edit/reject with 1 click |
 | **Observability** | Langfuse (self-hosted) | Framework-agnostic, self-hostable for compliance |
@@ -1103,6 +1195,18 @@ async def send_response_to_crm(ticket_id: str, response: str, pii_map: dict):
 
 This section covers everything needed to run the system in production: architecture, containers, IaC, CI/CD pipeline, secrets, networking, scaling, persistence, health checks, and runbook.
 
+### 13.0 Infrastructure Design Stance
+
+The infrastructure is split into three responsibility zones:
+
+| Zone | Components | Primary concern |
+|---|---|---|
+| Runtime plane | Worker, HITL API, SQS, LangGraph checkpoints, model gateway client | Process tickets reliably with bounded retries and backpressure |
+| Knowledge and policy plane | S3 policy docs, Qdrant, OpenSearch, prompt registry, policy version pointer | Serve current, source-attributed knowledge without coupling to deploys |
+| Governance plane | Audit log, Langfuse traces, eval store, dashboards, threshold config, kill switches | Prove behavior, detect regressions, and control autonomy level |
+
+This prevents the common failure mode where a prompt or threshold change is treated like "content" while it actually changes production behavior. Any artifact that changes customer-visible autonomy is versioned, auditable, and tied to an evaluation result.
+
 ---
 
 ### 13.1 Full AWS Architecture
@@ -1852,6 +1956,19 @@ aws ssm put-parameter \
 
 ## 14. Evaluation & Metrics
 
+Evaluation is the governance layer for the copilot. A model, prompt, retriever, threshold, or policy change should not reach production auto-send unless it passes offline evals, shadow comparisons, and live guardrail checks.
+
+### Service-Level Objectives
+
+| SLO | Target | Error budget meaning |
+|---|---:|---|
+| Ticket ingestion availability | 99.9% monthly | Webhooks can be queued or retried; data loss is unacceptable |
+| Auto-send policy violation rate | 0 known severe violations | Any severe violation disables auto-send until reviewed |
+| PII leakage to LLM provider | 0 detected events | Incident response and model-log audit required |
+| First draft latency p95 | <= 60s for assisted tickets | Slow drafts lose support-agent trust |
+| Auto-resolve latency p95 | <= 120s for eligible tickets | Queueing or vendor latency should not recreate the original support delay |
+| Audit completeness | 100% of processed tickets | Missing audit records block auto-send eligibility |
+
 ### Business Metrics (tracked in CloudWatch)
 
 | Metric | Target | How measured |
@@ -1863,6 +1980,8 @@ aws ssm put-parameter \
 | SLA breach rate | ≤ 50% of baseline | Tickets exceeding SLA window |
 | HITL edit rate | Track weekly | How often humans edit vs approve |
 | Policy check failure rate | Alert at > 5% | Policy violations per 100 tickets |
+| Cost per resolved ticket | Track by intent and route | LLM tokens + retrieval + infra allocation |
+| Human time saved | Track by intent and agent cohort | Baseline handling time minus review/edit time |
 
 ### Quality Metrics (weekly eval pipeline)
 
@@ -1884,29 +2003,73 @@ from ragas.metrics import faithfulness, answer_relevancy, context_precision
 - Run every model/prompt change against this set before deploying.
 - Track: exact match rate, semantic similarity (cosine > 0.85), policy compliance pass rate.
 
+### Promotion Gates for Customer-Visible Autonomy
+
+| Gate | Required signal | Blocks promotion when |
+|---|---|---|
+| Offline golden set | Accuracy, faithfulness, and policy pass rate meet target for the target intent | Any severe policy miss, unsupported claim, or PII leak appears |
+| Shadow comparison | Drafts match or improve on human response quality for the target intent | Human reviewers consistently prefer existing support responses |
+| HITL approval | Support agents approve drafts with low edit distance | High edit rate indicates the agent is creating review burden |
+| Live guardrails | No severe policy failures, no audit gaps, stable SLA metrics | SLA breach rate, complaint rate, or compliance flags regress |
+| Cost guardrail | Cost per resolved ticket remains below assisted-human baseline | Token growth or retrieval fanout makes automation uneconomic |
+
+### Evaluation Dataset Slices
+
+Do not evaluate only the happy path. The golden set should be stratified by:
+
+- Intent: payment failure, KYC query, FX rate, general FAQ, blocked account, compliance question.
+- Risk: low-risk answer, sensitive financial answer, explicit human escalation, angry customer, ambiguous ticket.
+- Language/channel: English, mixed-language messages, short chat messages, long email threads.
+- Data dependency: no tool call, one tool call, multi-hop tool calls, stale or missing tool result.
+- Policy version: current policy, recently changed policy, retired policy that must not be used.
+
+### Regression Budget
+
+Any change to prompts, retrieval ranking, model route, policy checks, or thresholds should compare against the last production baseline:
+
+| Regression type | Allowed? | Action |
+|---|---|---|
+| Severe policy miss | No | Block release and add counterexample to golden set |
+| PII leak | No | Block release, rotate affected logs if needed, review masking recognizers |
+| Accuracy drop on target intent | No for auto-send intents | Keep assisted-only until root cause is fixed |
+| Cost increase | Only with explicit approval | Require reason: better quality, lower latency, or broader coverage |
+| Latency increase | Only within SLO | Check retrieval fanout, model route, and queue depth |
+
 ---
 
 ## 15. Rollout Strategy
 
-### Phase 1 — Shadow Mode (Week 1–2)
+Rollout is not a calendar plan; it is a trust-building sequence. Each phase expands autonomy only after the previous phase produces evidence that the next blast radius is acceptable.
+
+### Phase 1 — Shadow Mode
 
 - Agent runs on all tickets but outputs are **not sent** — only logged.
 - Compare agent drafts against what human agents actually sent.
 - Measure: draft quality, policy check pass rate, false positive rate on HITL escalation.
+- Exit gate: no severe policy misses or PII leaks; draft quality is acceptable for the target low-risk intents.
 
-### Phase 2 — Assisted Mode (Week 3–4)
+### Phase 2 — Assisted Mode
 
 - HITL mode for **all** tickets.
 - Agent drafts are shown to human agents as suggestions.
 - Humans approve/edit/reject — build training signal.
 - Target: ≥ 70% approval rate before moving to Phase 3.
+- Exit gate: support agents approve with low edit distance, review time decreases, and audit records are complete.
 
-### Phase 3 — Auto-Resolve (Week 5+)
+### Phase 3 — Auto-Resolve for Low-Risk Intents
 
 - Enable auto-send for `confidence ≥ 0.85` AND `policy_check_passed`.
 - Start with low-risk intents only: `fx_rate_query`, `general_faq`.
 - Expand intent coverage as trust is established.
 - Keep SLA breach rate and CSAT as circuit-breaker signals.
+- Exit gate: live metrics stay inside SLO/error-budget boundaries and support leadership signs off on expanded intent coverage.
+
+### Phase 4 — Platformization
+
+- Extract common primitives: ticket normalization, PII masking, prompt registry, policy guard, audit logger, HITL queue, eval runner.
+- Offer these as reusable libraries/services for other operations copilots.
+- Require new use cases to define their own intent risk tiers, allowed tools, human approval rules, and golden sets.
+- Avoid a generic "agent platform" too early; platformize only seams that have repeated across at least two workflows.
 
 ---
 
@@ -1923,6 +2086,24 @@ from ragas.metrics import faithfulness, answer_relevancy, context_precision
 | HITL dashboard unresponsive | SLA breach alert fires; tickets fall back to standard human queue |
 | Intent classifier wrong category | Confidence threshold catches most errors; low-confidence always goes to human |
 | Refund/compliance slips through auto-send | `ALWAYS_HUMAN` set hard-coded; not overridable by confidence score |
+| Policy document changes but index is stale | Policy version pointer and index build status must match before auto-send uses that policy |
+| Human reviewers stop trusting drafts | Track approval rate, edit distance, and reject reasons; roll back intent coverage if review burden rises |
+| Prompt/model update silently changes behavior | Version every prompt and model route; require golden-set diff before promotion |
+| Tool result is stale or unavailable | Include freshness timestamps in tool outputs; escalate when required data is missing or older than SLA |
+| Auto-send incident affects many tickets | Intent allowlist, confidence threshold, and global auto-send kill switch limit blast radius |
+| Audit log write fails | Treat as auto-send blocker; unresolved ticket goes to human queue with trace of failure |
+
+### Principal Engineer Review Checklist
+
+Before approving this design for production, challenge these points:
+
+- **Should this be autonomous?** Which intents create enough business value to justify auto-send risk?
+- **Where is the irreversible action?** Confirm every irreversible mutation remains human-owned or domain-service-owned.
+- **What is the blast radius?** Verify kill switches, intent allowlists, queue isolation, and rate limits.
+- **Can compliance reconstruct a decision?** Check audit completeness across prompt, context, tools, policy version, model version, and reviewer.
+- **What happens when knowledge is wrong?** Validate policy versioning, stale-index handling, and source attribution.
+- **Can support ops operate it without engineers?** Threshold tuning, intent toggles, queue fallback, and review dashboards must be usable by operators.
+- **Is this becoming a platform for the right reasons?** Reuse shared safety primitives, but keep domain-specific policies and tools owned by the right teams.
 
 ---
 
@@ -2000,6 +2181,9 @@ support-copilot/
 | **Immutable audit log** | Compliance requirement; enables post-hoc debugging and model improvement |
 | **Shadow mode rollout** | Builds trust with ops team; catches failure modes before they affect customers |
 | **Qdrant over pgvector** | See ADR below — dedicated vector engine chosen for ANN performance, payload filtering, and operational isolation from the transactional DB |
+| **Control plane separated from runtime** | Prompts, thresholds, model routes, policies, and intent allowlists change through governed config instead of code edits |
+| **Intent-scoped autonomy** | Limits blast radius by allowing auto-send only for low-risk, well-evaluated ticket classes |
+| **Evaluation as release gate** | Prompt/model/retrieval changes must beat the production baseline before customer-visible autonomy expands |
 
 ---
 
