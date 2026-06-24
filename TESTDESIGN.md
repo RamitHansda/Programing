@@ -42,7 +42,7 @@ Covered cases:
 
 ### HTTP API tests
 
-`TaskForgeHttpServerTest` starts the JDK HTTP server on an ephemeral port and verifies:
+`TaskForgeSpringApiTest` starts a Spring Boot application context and exercises the Spring MVC layer through `MockMvc`. It verifies:
 
 1. `POST /workflows` stores a JSON workflow.
 2. `POST /workflows/{id}/executions` starts an execution.
@@ -61,7 +61,7 @@ mvn test
 To run the backend:
 
 ```bash
-mvn exec:java -Dexec.mainClass=lld.taskforge.TaskForgeApplicationKt
+mvn spring-boot:run
 ```
 
 Example workflow registration:
@@ -103,6 +103,6 @@ curl -X POST http://localhost:8080/workflows/example/executions
 
 - The built-in HTTP handler is not integration-tested against a real HTTP server in this suite.
 - The built-in script handler is not heavily stress-tested for large stdout/stderr streams.
-- The JSON parser is covered through API smoke testing but not by an exhaustive JSON compliance suite.
+- Spring/Jackson request binding is covered through API smoke testing, not an exhaustive API contract suite.
 - Persistence and multi-process recovery are outside the current in-memory scope.
 

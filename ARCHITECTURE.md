@@ -1,12 +1,15 @@
 # TaskForge Architecture
 
-TaskForge is implemented in Kotlin under `src/main/kotlin/lld/taskforge`. It is a small in-memory backend built on the JDK rather than a framework so the engine behavior and extension seams remain easy to inspect.
+TaskForge is implemented in Kotlin under `src/main/kotlin/lld/taskforge`. It is a Spring Boot HTTP/JSON backend with a framework-independent orchestration engine underneath the REST API.
 
 ## Components
 
 | Component | Responsibility |
 | --- | --- |
-| `TaskForgeHttpServer` | HTTP/JSON API using `com.sun.net.httpserver.HttpServer`. |
+| `TaskForgeApplication` | Spring Boot entry point. |
+| `TaskForgeSpringConfiguration` | Spring beans for the handler registry and engine. |
+| `TaskForgeController` | Spring MVC HTTP/JSON API for workflows, executions, cancellation, and approvals. |
+| `TaskForgeExceptionHandler` | Maps validation, not-found, and bad-request failures to JSON error responses. |
 | `TaskForgeEngine` | Workflow registration, execution orchestration, cancellation, approvals, retries, timeouts, and state snapshots. |
 | `WorkflowValidator` | Rejects invalid workflow definitions before storage. |
 | `TaskHandlerRegistry` | Runtime registry for task handlers. This is the extensibility seam. |

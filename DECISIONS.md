@@ -6,11 +6,13 @@ This implementation is a working in-memory backend for the assignment. It favors
 
 Time spent was not measured by this autonomous agent, so there is no human time-spent calibration to report.
 
-## Kotlin and plain JDK APIs
+## Kotlin and Spring Boot
 
-The assignment allowed Kotlin, Go, or Rust. I chose Kotlin because the existing repository is already JVM/Maven-based and Java 21 is available. The backend uses JDK HTTP server, `HttpClient`, and executor services rather than Spring/Ktor. This keeps the review focused on orchestration behavior rather than framework configuration.
+The assignment allowed Kotlin, Go, or Rust. I chose Kotlin because the existing repository is already JVM/Maven-based and Java 21 is available. The backend now uses Spring Boot for the HTTP API, request binding, JSON serialization, and test support.
 
-Trade-off: the JSON parser and HTTP router are intentionally small and not a replacement for production libraries. In production I would use a maintained JSON library and web framework.
+The orchestration engine itself remains framework-independent. Spring wires `TaskHandlerRegistry` and `TaskForgeEngine` as beans, while `TaskForgeController` adapts HTTP requests to engine calls. This keeps the extensibility seam testable without Spring and still provides a production-familiar application shape.
+
+Trade-off: using Spring Boot adds dependency and startup overhead compared with a plain JDK server, but it removes hand-written JSON/router code and gives a clearer backend structure for reviewers expecting a web application.
 
 ## In-memory storage
 
@@ -131,7 +133,7 @@ Validation errors use `422` because the JSON is syntactically valid but semantic
 - Authentication and authorization for workflow APIs and approval identities.
 - Structured logging, metrics, tracing, and audit records.
 - Backpressure and configurable per-workflow concurrency limits.
-- A maintained JSON/web stack.
+- Production hardening around the Spring deployment: request size limits, structured access logging, health checks, and actuator metrics.
 - A sandboxed script runner. The current script handler is suitable only for trusted workflows.
 - A richer typed workflow schema with versioning and migration.
 
