@@ -6,27 +6,22 @@ from typing import Any, Sequence
 
 import duckdb
 
-from data_profiler.adapters.base import DatabaseAdapter
-from data_profiler.adapters.sql_stats import (
-    build_histogram_sql,
-    build_stats_select,
-    parse_stats_row,
-    rows_to_histogram,
-)
-from data_profiler.adapters.sqlite_adapter import _filter_tables
+from data_profiler.adapters.base import DatabaseAdapter, SamplePlan
+from data_profiler.adapters.filters import filter_tables
+from data_profiler.adapters.sql_profiling import SqlProfilingMixin
 from data_profiler.config import ProfilerConfig
-from data_profiler.models import ColumnMeta, ColumnStats, TableRef
+from data_profiler.models import ColumnMeta, TableRef
 from data_profiler.type_mapping import map_native_type
 
 
-class DuckDBAdapter(DatabaseAdapter):
+class DuckDBAdapter(SqlProfilingMixin, DatabaseAdapter):
     engine_name = "duckdb"
+    supports_concurrent_profiling = False
 
     def __init__(self, config: ProfilerConfig, database: str = ":memory:"):
         super().__init__(config)
         self.database = database
         self._conn: duckdb.DuckDBPyConnection | None = None
-        self._last_sample_meta: tuple[bool, int | None] = (False, None)
 
     def connect(self) -> None:
         self._conn = duckdb.connect(self.database)
@@ -42,6 +37,9 @@ class DuckDBAdapter(DatabaseAdapter):
             raise RuntimeError("DuckDBAdapter is not connected")
         return self._conn
 
+    def connection_hint(self) -> str | None:
+        return self.database
+
     def list_tables(self) -> list[TableRef]:
         rows = self.conn.execute(
             """
@@ -52,13 +50,12 @@ class DuckDBAdapter(DatabaseAdapter):
             ORDER BY table_schema, table_name
             """
         ).fetchall()
-        tables = [
-            TableRef(catalog=r[0], schema=r[1], name=r[2]) for r in rows
-        ]
-        return _filter_tables(tables, self.config)
+        return filter_tables(
+            [TableRef(catalog=r[0], schema=r[1], name=r[2]) for r in rows],
+            self.config,
+        )
 
     def get_columns(self, table: TableRef) -> list[ColumnMeta]:
-        # DuckDB's information_schema.columns has no comment column in all versions.
         rows = self.conn.execute(
             """
             SELECT column_name, data_type, is_nullable, ordinal_position
@@ -102,9 +99,14 @@ class DuckDBAdapter(DatabaseAdapter):
             return {}
 
     def get_row_count(self, table: TableRef) -> tuple[int | None, bool]:
-        if self.config.estimate_row_counts:
-            # DuckDB does not expose cheap estimates like Snowflake; fall back.
-            pass
+        if self.config.skip_exact_count_when_sampling and (
+            self.config.sample_size is not None or self.config.sample_percent is not None
+        ):
+            # Prefer a cheap exact count only when we are not sampling; otherwise
+            # the stats query already returns COUNT(*) over the sample.
+            plan = self.build_sample_plan(table, row_count=None)
+            if plan.sampled:
+                return None, True
         row = self.conn.execute(f"SELECT COUNT(*) FROM {self.qualify(table)}").fetchone()
         return int(row[0]), False
 
@@ -122,63 +124,28 @@ class DuckDBAdapter(DatabaseAdapter):
         except Exception:
             return None
 
-    def profile_column_stats(
-        self,
-        table: TableRef,
-        columns: Sequence[ColumnMeta],
-        *,
-        row_count: int | None,
-    ) -> dict[str, ColumnStats]:
-        if not columns:
-            return {}
-
-        sample_clause, sampled, sample_size = self._sample_clause(row_count)
-        select_sql, aliases = build_stats_select(
-            columns, self.config, quote_ident=self.quote_ident
-        )
-        sql = f"SELECT {select_sql} FROM {self.qualify(table)} {sample_clause}"
-        row = self.conn.execute(sql).fetchone()
-        sample_rows = int(row[-1]) if row is not None else 0
-        stats = parse_stats_row(
-            columns,
-            aliases,
-            list(row[:-1]) if row is not None else [],
-            sample_rows=sample_rows,
-            row_count=row_count if sampled else sample_rows,
-            estimate_distinct=sampled,
-        )
-
-        if self.config.include_histograms:
-            for col in columns:
-                hist_sql = build_histogram_sql(
-                    col,
-                    self.config,
-                    quote_ident=self.quote_ident,
-                    qualify_table=self.qualify(table),
-                    sample_clause=sample_clause,
-                )
-                if not hist_sql:
-                    continue
-                try:
-                    hist_rows = self.conn.execute(hist_sql).fetchall()
-                    stats[col.name].histogram = rows_to_histogram(
-                        hist_rows, self.config.histogram_buckets
-                    )
-                except Exception:
-                    pass
-
-        for s in stats.values():
-            s.sampled_rows = sample_rows
-        self._last_sample_meta = (sampled, sample_size if sampled else sample_rows)
-        return stats
-
-    def _sample_clause(self, row_count: int | None) -> tuple[str, bool, int | None]:
+    def build_sample_plan(self, table: TableRef, row_count: int | None) -> SamplePlan:
         cfg = self.config
         if cfg.sample_percent is not None:
             pct = min(100.0, max(0.0, cfg.sample_percent))
-            # DuckDB TABLESAMPLE SYSTEM (percent)
-            return f"TABLESAMPLE SYSTEM ({pct})", True, None
-        if cfg.sample_size is not None and row_count is not None and row_count > cfg.sample_size:
-            # Prefer reservoir-style limit after randomize for bounded samples.
-            return f"USING SAMPLE {cfg.sample_size}", True, cfg.sample_size
-        return "", False, None
+            return SamplePlan(
+                clause=f"TABLESAMPLE SYSTEM ({pct})",
+                sampled=True,
+                sample_size=None,
+                distinct_is_estimate=True,
+            )
+        if cfg.sample_size is not None:
+            if row_count is not None and row_count <= cfg.sample_size:
+                return SamplePlan()
+            return SamplePlan(
+                clause=f"USING SAMPLE {cfg.sample_size}",
+                sampled=True,
+                sample_size=cfg.sample_size,
+                distinct_is_estimate=True,
+            )
+        return SamplePlan()
+
+    def execute_query(self, sql: str, params: Sequence[Any] | None = None) -> list[tuple]:
+        if params:
+            return [tuple(r) for r in self.conn.execute(sql, list(params)).fetchall()]
+        return [tuple(r) for r in self.conn.execute(sql).fetchall()]

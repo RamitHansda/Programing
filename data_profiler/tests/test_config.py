@@ -2,7 +2,10 @@
 
 from pathlib import Path
 
+import pytest
+
 from data_profiler.config import ProfilerConfig
+from data_profiler.errors import ConfigurationError
 
 
 def test_from_yaml(tmp_path: Path):
@@ -14,6 +17,8 @@ profiler:
   concurrency: 8
   stats_depth: full
   include_schemas: [public, analytics]
+  timeout_seconds_per_table: 30
+  max_histogram_columns: 5
 """,
         encoding="utf-8",
     )
@@ -22,11 +27,14 @@ profiler:
     assert cfg.concurrency == 8
     assert cfg.include_histograms is True
     assert cfg.include_schemas == ["public", "analytics"]
+    assert cfg.timeout_seconds_per_table == 30
 
 
 def test_invalid_stats_depth():
-    try:
+    with pytest.raises(ConfigurationError):
         ProfilerConfig(stats_depth="deep")
-        assert False, "expected ValueError"
-    except ValueError:
-        pass
+
+
+def test_invalid_sample_percent():
+    with pytest.raises(ConfigurationError):
+        ProfilerConfig(sample_percent=0)

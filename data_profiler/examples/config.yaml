@@ -1,45 +1,42 @@
 # Example profiler configuration
 #
-# Usage:
-#   data-profiler --engine sqlite --database demos/data/demo.sqlite --config examples/config.yaml -o out.json
-#   data-profiler --engine snowflake --config examples/config.yaml -o snowflake_profile.json
+# data-profiler --engine sqlite --database demos/data/demo.sqlite \
+#   --config examples/config.yaml -o out.json
 
 profiler:
-  sample_size: 100000          # max rows for column stats; null = full scan
-  sample_percent: null         # alternative: TABLESAMPLE percent when supported
-  stats_depth: basic           # basic | full (full enables histograms)
+  sample_size: 100000
+  sample_percent: null
+  stats_depth: basic              # basic | full
   histogram_buckets: 10
-  concurrency: 4               # parallel table workers (sqlite forced sequential)
+  max_histogram_columns: 20       # cost governor for stats_depth=full
+  concurrency: 4                  # honored when adapter.supports_concurrent_profiling
   max_tables: null
   include_schemas: []
   exclude_schemas: [INFORMATION_SCHEMA, information_schema]
   include_tables: []
   exclude_tables: []
-  estimate_row_counts: true    # prefer cheap estimates on Snowflake when available
+  estimate_row_counts: true       # Snowflake SHOW TABLES + RESULT_SCAN
+  skip_exact_count_when_sampling: true
+  timeout_seconds_per_table: 120  # soft per-table budget (seconds)
+  max_retries: 1                  # transient warehouse errors
   resume_state_path: .profiler_state.json
-  output_format: json          # json | yaml | parquet
+  output_format: json             # json | yaml | parquet
   fail_fast: false
-
-# Connection block is engine-specific. CLI --engine selects the adapter.
-# For Snowflake / Databricks you can also use environment variables
-# (SNOWFLAKE_*, DATABRICKS_*); see README.
 
 connection:
   # sqlite / duckdb:
   # database: demos/data/demo.sqlite
 
-  # snowflake:
+  # snowflake: prefer env vars (SNOWFLAKE_*) for secrets
   # account: xy12345.us-east-1
   # user: profiler_user
-  # password: "****"
   # warehouse: COMPUTE_WH
   # database: ANALYTICS
   # schema: PUBLIC
   # role: PROFILER_ROLE
 
-  # databricks:
+  # databricks: prefer env vars (DATABRICKS_*)
   # server_hostname: adb-xxxx.azuredatabricks.net
   # http_path: /sql/1.0/warehouses/abcd
-  # access_token: "****"
   # catalog: main
   # schema: default

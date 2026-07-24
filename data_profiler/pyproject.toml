@@ -17,7 +17,7 @@ dependencies = [
 snowflake = ["snowflake-connector-python>=3.6.0"]
 databricks = ["databricks-sql-connector>=3.0.0"]
 parquet = ["pyarrow>=14.0.0"]
-dev = ["pytest>=8.0", "pytest-cov>=5.0"]
+dev = ["pytest>=8.0", "pytest-cov>=5.0", "jsonschema>=4.0"]
 
 [project.scripts]
 data-profiler = "data_profiler.cli:main"

@@ -10,6 +10,7 @@ from data_profiler.adapters.duckdb_adapter import DuckDBAdapter
 from data_profiler.adapters.snowflake_adapter import SnowflakeAdapter
 from data_profiler.adapters.sqlite_adapter import SQLiteAdapter
 from data_profiler.config import ProfilerConfig
+from data_profiler.errors import ConfigurationError
 
 ADAPTERS = {
     "sqlite": SQLiteAdapter,
@@ -22,5 +23,7 @@ ADAPTERS = {
 def create_adapter(engine: str, config: ProfilerConfig, **kwargs: Any) -> DatabaseAdapter:
     key = engine.lower().strip()
     if key not in ADAPTERS:
-        raise ValueError(f"Unsupported engine '{engine}'. Choose from: {sorted(ADAPTERS)}")
+        raise ConfigurationError(
+            f"Unsupported engine '{engine}'. Choose from: {sorted(ADAPTERS)}"
+        )
     return ADAPTERS[key](config, **kwargs)

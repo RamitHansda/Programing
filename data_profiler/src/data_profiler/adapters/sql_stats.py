@@ -2,24 +2,32 @@
 
 from __future__ import annotations
 
-from typing import Any, Sequence
+from typing import Any, Callable, Sequence
 
 from data_profiler.config import ProfilerConfig
 from data_profiler.models import ColumnMeta, ColumnStats, HistogramBucket, TypeKind
 from data_profiler.type_mapping import is_comparable_for_minmax, supports_histogram
+
+DistinctExpr = Callable[[str], str]
+
+
+def exact_distinct(quoted_col: str) -> str:
+    return f"COUNT(DISTINCT {quoted_col})"
 
 
 def build_stats_select(
     columns: Sequence[ColumnMeta],
     config: ProfilerConfig,
     *,
-    quote_ident,
+    quote_ident: Callable[[str], str],
+    distinct_expr: DistinctExpr | None = None,
 ) -> tuple[str, list[tuple[str, str]]]:
     """Build a single SELECT that aggregates stats for many columns.
 
-    Returns (select_sql_without_from, aliases) where aliases is a list of
-    (column_name, metric_name) in select-list order.
+    ``distinct_expr`` lets dialects swap in HLL / approx aggregates without
+    duplicating the rest of the select list.
     """
+    distinct_fn = distinct_expr or exact_distinct
     pieces: list[str] = []
     aliases: list[tuple[str, str]] = []
 
@@ -34,8 +42,7 @@ def build_stats_select(
             pieces.append(f"MAX({q}) AS {quote_ident(col.name + '__max')}")
             aliases.append((col.name, "max"))
 
-        # Exact distinct for modest samples; engines may rewrite to HLL later.
-        pieces.append(f"COUNT(DISTINCT {q}) AS {quote_ident(col.name + '__distinct')}")
+        pieces.append(f"{distinct_fn(q)} AS {quote_ident(col.name + '__distinct')}")
         aliases.append((col.name, "distinct"))
 
     pieces.append("COUNT(*) AS __sample_rows")
@@ -50,21 +57,21 @@ def parse_stats_row(
     sample_rows: int,
     row_count: int | None,
     estimate_distinct: bool,
+    sampled: bool,
 ) -> dict[str, ColumnStats]:
-    values = list(row)
-    # Last column is __sample_rows if present in select; caller may pass it.
+    if len(row) != len(aliases):
+        raise ValueError(
+            f"stats row width mismatch: got {len(row)} values for {len(aliases)} aliases"
+        )
     by_col: dict[str, ColumnStats] = {c.name: ColumnStats() for c in columns}
-    idx = 0
-    for col_name, metric in aliases:
-        val = values[idx]
-        idx += 1
+    for idx, (col_name, metric) in enumerate(aliases):
+        val = row[idx]
         stats = by_col[col_name]
         if metric == "nulls":
             stats.null_count = int(val) if val is not None else None
             if stats.null_count is not None and sample_rows > 0:
                 stats.null_ratio = stats.null_count / sample_rows
-                if row_count is not None and not estimate_distinct:
-                    # Scale null count to full table when sampling.
+                if sampled and row_count is not None:
                     stats.null_count = int(round(stats.null_ratio * row_count))
         elif metric == "min":
             stats.min = val
@@ -81,7 +88,7 @@ def build_histogram_sql(
     column: ColumnMeta,
     config: ProfilerConfig,
     *,
-    quote_ident,
+    quote_ident: Callable[[str], str],
     qualify_table: str,
     sample_clause: str,
 ) -> str | None:
@@ -89,7 +96,6 @@ def build_histogram_sql(
         return None
     q = quote_ident(column.name)
     buckets = max(2, config.histogram_buckets)
-    # Width-bucket style histogram using min/max derived inline.
     return f"""
     WITH base AS (
       SELECT {q} AS v FROM {qualify_table} {sample_clause} WHERE {q} IS NOT NULL

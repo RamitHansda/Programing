@@ -33,17 +33,27 @@ _STRUCT = re.compile(r"^(struct|row|record)(<.*>)?$", re.I)
 
 
 def map_native_type(native: str, nullable: bool | None = None) -> PortableType:
-    """Normalize a vendor type string into a portable type descriptor."""
+    """Normalize a vendor type string into a portable type descriptor.
+
+    Cross-engine comparability rule: ``NUMBER(p,0)`` / ``NUMERIC(p,0)`` /
+    ``DECIMAL(p,0)`` map to ``integer`` so Snowflake NUMBER columns line up
+    with SQLite INTEGER / DuckDB BIGINT semantically.
+    """
     raw = (native or "").strip()
     base = raw.split("(", 1)[0].strip()
+    precision, scale, max_length = _parse_params(raw)
     kind = TypeKind.UNKNOWN
 
     if _INTEGER.match(base) or _INTEGER.match(raw):
         kind = TypeKind.INTEGER
+    elif _DECIMAL.match(raw) or _DECIMAL.match(base):
+        # Integral decimals compare better as integer across warehouses.
+        if scale == 0:
+            kind = TypeKind.INTEGER
+        else:
+            kind = TypeKind.DECIMAL
     elif _FLOAT.match(base) or _FLOAT.match(raw):
         kind = TypeKind.FLOAT
-    elif _DECIMAL.match(raw) or _DECIMAL.match(base):
-        kind = TypeKind.DECIMAL
     elif _BOOLEAN.match(base):
         kind = TypeKind.BOOLEAN
     elif _STRING.match(raw) or _STRING.match(base):
@@ -64,11 +74,7 @@ def map_native_type(native: str, nullable: bool | None = None) -> PortableType:
         kind = TypeKind.MAP
     elif _STRUCT.match(raw) or base.upper().startswith("STRUCT"):
         kind = TypeKind.STRUCT
-    elif " " in raw:
-        # Snowflake NUMBER(38,0) etc. already covered; fall through to UNKNOWN.
-        kind = TypeKind.UNKNOWN
 
-    precision, scale, max_length = _parse_params(raw)
     return PortableType(
         kind=kind,
         native=raw,

@@ -9,7 +9,15 @@ from typing import Any
 
 import yaml
 
-from data_profiler.models import ProfileDocument, TableProfile
+from data_profiler.models import (
+    ColumnProfile,
+    ColumnStats,
+    HistogramBucket,
+    PortableType,
+    ProfileDocument,
+    TableProfile,
+    TypeKind,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +40,33 @@ def write_profile(doc: ProfileDocument, path: str | Path, fmt: str = "json") -> 
     return path
 
 
+def validate_against_schema(payload: dict[str, Any], schema_path: str | Path | None = None) -> None:
+    """Validate a profile document against the bundled JSON Schema when available.
+
+    Uses ``jsonschema`` if installed; otherwise performs a lightweight structural check.
+    """
+    required_top = {"schema_version", "run", "tables"}
+    missing = required_top - set(payload)
+    if missing:
+        raise ValueError(f"Profile missing keys: {sorted(missing)}")
+    if payload.get("schema_version") != "1.0.0":
+        raise ValueError(f"Unsupported schema_version: {payload.get('schema_version')}")
+    if not isinstance(payload.get("tables"), list):
+        raise ValueError("tables must be a list")
+
+    if schema_path is None:
+        schema_path = Path(__file__).resolve().parents[2] / "schema" / "profile_schema.json"
+    schema_path = Path(schema_path)
+    if not schema_path.exists():
+        return
+    try:
+        import jsonschema  # type: ignore
+    except ImportError:
+        return
+    schema = json.loads(schema_path.read_text(encoding="utf-8"))
+    jsonschema.validate(payload, schema)
+
+
 def _write_parquet(payload: dict[str, Any], path: Path) -> None:
     try:
         import pyarrow as pa
@@ -41,7 +76,7 @@ def _write_parquet(payload: dict[str, Any], path: Path) -> None:
             "Parquet output requires pyarrow: pip install 'data-profiler[parquet]'"
         ) from exc
 
-    # Flatten column-level stats into a tabular form for analytics consumers.
+    # Analytics-oriented flatten. Full fidelity remains in JSON/YAML.
     rows: list[dict[str, Any]] = []
     run = payload.get("run", {})
     for table in payload.get("tables", []):
@@ -53,10 +88,12 @@ def _write_parquet(payload: dict[str, Any], path: Path) -> None:
                     "engine": run.get("engine"),
                     "table_fqn": table.get("fully_qualified_name"),
                     "table_row_count": table.get("row_count"),
+                    "table_error": table.get("error"),
                     "column_name": col.get("name"),
                     "type_kind": (col.get("type") or {}).get("kind"),
                     "native_type": (col.get("type") or {}).get("native"),
                     "nullable": (col.get("type") or {}).get("nullable"),
+                    "comment": col.get("comment"),
                     "min": _stringify(stats.get("min")),
                     "max": _stringify(stats.get("max")),
                     "null_count": stats.get("null_count"),
@@ -66,6 +103,12 @@ def _write_parquet(payload: dict[str, Any], path: Path) -> None:
                 }
             )
     table = pa.Table.from_pylist(rows)
+    # Keep run metadata as parquet file metadata for lineage.
+    metadata = {
+        b"data_profiler_schema_version": str(payload.get("schema_version", "")).encode(),
+        b"data_profiler_run_json": json.dumps(run, default=str).encode(),
+    }
+    table = table.replace_schema_metadata(metadata)
     pq.write_table(table, path)
 
 
@@ -76,60 +119,84 @@ def _stringify(value: Any) -> str | None:
 
 
 class ResumeState:
-    """Incremental checkpoint so a failed run can skip completed tables."""
+    """Incremental checkpoint so a failed run can skip *successful* tables.
 
-    def __init__(self, path: str | Path | None):
+    Failures are recorded for observability but intentionally NOT skipped on
+    resume — otherwise a transient warehouse error would permanently omit a table.
+
+    State is keyed by a config/engine fingerprint so incompatible re-runs cannot
+    silently reuse stale profiles.
+    """
+
+    def __init__(self, path: str | Path | None, *, fingerprint: str | None = None):
         self.path = Path(path) if path else None
+        self.fingerprint = fingerprint or "none"
         self.completed: dict[str, dict[str, Any]] = {}
+        self.failed: dict[str, dict[str, Any]] = {}
         if self.path and self.path.exists():
             raw = json.loads(self.path.read_text(encoding="utf-8"))
-            self.completed = raw.get("completed", {})
-            logger.info(
-                "Loaded resume state with %d completed tables from %s",
-                len(self.completed),
-                self.path,
-            )
+            stored_fp = raw.get("fingerprint")
+            if stored_fp and fingerprint and stored_fp != fingerprint:
+                logger.warning(
+                    "Resume state fingerprint mismatch (stored=%s current=%s); starting fresh",
+                    stored_fp,
+                    fingerprint,
+                )
+            else:
+                self.completed = raw.get("completed", {})
+                self.failed = raw.get("failed", {})
+                if stored_fp:
+                    self.fingerprint = stored_fp
+                logger.info(
+                    "Loaded resume state successes=%d failures=%d from %s",
+                    len(self.completed),
+                    len(self.failed),
+                    self.path,
+                )
 
-    def has(self, fqn: str) -> bool:
-        return fqn in self.completed
-
-    def get_table(self, fqn: str) -> TableProfile | None:
+    def get_successful(self, fqn: str) -> TableProfile | None:
         raw = self.completed.get(fqn)
         if not raw:
             return None
-        return _table_from_dict(raw)
+        return table_from_dict(raw)
 
-    def mark(self, profile: TableProfile) -> None:
+    def mark_success(self, profile: TableProfile) -> None:
         if self.path is None:
             return
         self.completed[profile.fully_qualified_name] = profile.to_dict()
+        self.failed.pop(profile.fully_qualified_name, None)
+        self.flush()
+
+    def mark_failure(self, profile: TableProfile) -> None:
+        if self.path is None:
+            return
+        self.failed[profile.fully_qualified_name] = {
+            "error": profile.error,
+            "duration_ms": profile.duration_ms,
+        }
         self.flush()
 
     def flush(self) -> None:
         if self.path is None:
             return
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        payload = {"completed": self.completed}
+        payload = {
+            "fingerprint": self.fingerprint,
+            "completed": self.completed,
+            "failed": self.failed,
+        }
         tmp = self.path.with_suffix(self.path.suffix + ".tmp")
         tmp.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
         tmp.replace(self.path)
 
     def clear(self) -> None:
         self.completed = {}
+        self.failed = {}
         if self.path and self.path.exists():
             self.path.unlink()
 
 
-def _table_from_dict(raw: dict[str, Any]) -> TableProfile:
-    """Best-effort reconstruction for resume (stats already serialized)."""
-    from data_profiler.models import (
-        ColumnProfile,
-        ColumnStats,
-        HistogramBucket,
-        PortableType,
-        TypeKind,
-    )
-
+def table_from_dict(raw: dict[str, Any]) -> TableProfile:
     columns: list[ColumnProfile] = []
     for c in raw.get("columns", []):
         t = c.get("type") or {}

@@ -1,38 +1,37 @@
 """Databricks SQL warehouse adapter.
 
-Requires `databricks-sql-connector` and a SQL warehouse endpoint.
+Requires ``databricks-sql-connector`` and a SQL warehouse endpoint.
 
-Assumptions / notes:
-  - Uses `system.information_schema` (Unity Catalog) when available; falls back
-    to `information_schema` in the current catalog.
-  - Sampling uses TABLESAMPLE / LIMIT patterns supported by Databricks SQL.
-  - Distinct counts use approx_count_distinct for large tables.
-  - Privileges needed: SELECT on tables, USE CATALOG/SCHEMA, and read access to
-    information_schema.
+Assumptions
+-----------
+- Prefers Unity Catalog ``system.information_schema``; falls back to local
+  ``information_schema``.
+- Identifiers are quoted with backticks (Databricks SQL / Spark SQL style).
+- Large / sampled tables use ``approx_count_distinct``.
+- Privileges: SELECT on tables, USE CATALOG/SCHEMA, information_schema read.
 """
 
 from __future__ import annotations
 
 import logging
-from typing import Any, Sequence
+import re
+from contextlib import contextmanager
+from typing import Any, Iterator, Sequence
 
-from data_profiler.adapters.base import DatabaseAdapter
-from data_profiler.adapters.sql_stats import (
-    build_histogram_sql,
-    build_stats_select,
-    parse_stats_row,
-    rows_to_histogram,
-)
-from data_profiler.adapters.sqlite_adapter import _filter_tables
+from data_profiler.adapters.base import DatabaseAdapter, SamplePlan
+from data_profiler.adapters.filters import filter_tables
+from data_profiler.adapters.sql_profiling import SqlProfilingMixin
 from data_profiler.config import ProfilerConfig
-from data_profiler.models import ColumnMeta, ColumnStats, TableRef
-from data_profiler.type_mapping import is_comparable_for_minmax, map_native_type
+from data_profiler.errors import AdapterError
+from data_profiler.models import ColumnMeta, TableRef
+from data_profiler.type_mapping import map_native_type
 
 logger = logging.getLogger(__name__)
 
 
-class DatabricksAdapter(DatabaseAdapter):
+class DatabricksAdapter(SqlProfilingMixin, DatabaseAdapter):
     engine_name = "databricks"
+    supports_concurrent_profiling = True
 
     def __init__(
         self,
@@ -55,9 +54,9 @@ class DatabricksAdapter(DatabaseAdapter):
             "schema": schema,
             **connect_kwargs,
         }
+        self.database = catalog
         self._external_conn = connection
         self._conn: Any | None = None
-        self._last_sample_meta: tuple[bool, int | None] = (False, None)
 
     def connect(self) -> None:
         if self._external_conn is not None:
@@ -73,30 +72,39 @@ class DatabricksAdapter(DatabaseAdapter):
         catalog = params.pop("catalog", None)
         schema = params.pop("schema", None)
         self._conn = dbsql.connect(**params)
-        cur = self._conn.cursor()
-        try:
+        with self._cursor() as cur:
             if catalog:
                 cur.execute(f"USE CATALOG {self.quote_ident(catalog)}")
             if schema:
                 cur.execute(f"USE SCHEMA {self.quote_ident(schema)}")
-        finally:
-            cur.close()
 
     def close(self) -> None:
         if self._external_conn is None and self._conn is not None:
             self._conn.close()
         self._conn = None
 
-    @property
-    def conn(self) -> Any:
+    def connection_hint(self) -> str | None:
+        host = self.connect_params.get("server_hostname")
+        catalog = self.connect_params.get("catalog")
+        if host or catalog:
+            return f"{host}/{catalog}"
+        return None
+
+    def quote_ident(self, ident: str) -> str:
+        return "`" + ident.replace("`", "``") + "`"
+
+    @contextmanager
+    def _cursor(self) -> Iterator[Any]:
         if self._conn is None:
             raise RuntimeError("DatabricksAdapter is not connected")
-        return self._conn
+        cur = self._conn.cursor()
+        try:
+            yield cur
+        finally:
+            cur.close()
 
     def list_tables(self) -> list[TableRef]:
-        cur = self.conn.cursor()
-        try:
-            # Prefer Unity Catalog information_schema.
+        with self._cursor() as cur:
             try:
                 cur.execute(
                     """
@@ -117,13 +125,10 @@ class DatabricksAdapter(DatabaseAdapter):
                     """
                 )
             tables = [TableRef(catalog=r[0], schema=r[1], name=r[2]) for r in cur.fetchall()]
-        finally:
-            cur.close()
-        return _filter_tables(tables, self.config)
+        return filter_tables(tables, self.config)
 
     def get_columns(self, table: TableRef) -> list[ColumnMeta]:
-        cur = self.conn.cursor()
-        try:
+        with self._cursor() as cur:
             try:
                 cur.execute(
                     """
@@ -148,8 +153,6 @@ class DatabricksAdapter(DatabaseAdapter):
                     (table.name, table.schema),
                 )
             rows = cur.fetchall()
-        finally:
-            cur.close()
 
         cols: list[ColumnMeta] = []
         for name, dtype, is_nullable, ordinal, comment in rows:
@@ -168,98 +171,46 @@ class DatabricksAdapter(DatabaseAdapter):
         return cols
 
     def get_row_count(self, table: TableRef) -> tuple[int | None, bool]:
-        cur = self.conn.cursor()
-        try:
+        if self.config.skip_exact_count_when_sampling:
+            plan = self.build_sample_plan(table, row_count=None)
+            if plan.sampled:
+                return None, True
+        with self._cursor() as cur:
             cur.execute(f"SELECT COUNT(*) FROM {self.qualify(table)}")
             return int(cur.fetchone()[0]), False
-        finally:
-            cur.close()
 
-    def profile_column_stats(
-        self,
-        table: TableRef,
-        columns: Sequence[ColumnMeta],
-        *,
-        row_count: int | None,
-    ) -> dict[str, ColumnStats]:
-        if not columns:
-            return {}
-
-        sample_clause, sampled, sample_size = self._sample_clause(row_count)
-        use_approx = sampled or (row_count is not None and row_count > 1_000_000)
-        select_sql, aliases = self._build_select(columns, use_approx=use_approx)
-        sql = f"SELECT {select_sql} FROM {self.qualify(table)} {sample_clause}"
-        cur = self.conn.cursor()
-        try:
-            cur.execute(sql)
-            row = cur.fetchone()
-        finally:
-            cur.close()
-
-        sample_rows = int(row[-1]) if row is not None else 0
-        stats = parse_stats_row(
-            columns,
-            aliases,
-            list(row[:-1]) if row is not None else [],
-            sample_rows=sample_rows,
-            row_count=row_count if sampled else sample_rows,
-            estimate_distinct=use_approx,
-        )
-
-        if self.config.include_histograms:
-            for col in columns:
-                hist_sql = build_histogram_sql(
-                    col,
-                    self.config,
-                    quote_ident=self.quote_ident,
-                    qualify_table=self.qualify(table),
-                    sample_clause=sample_clause,
-                )
-                if not hist_sql:
-                    continue
-                cur = self.conn.cursor()
-                try:
-                    cur.execute(hist_sql)
-                    hist_rows = cur.fetchall()
-                    stats[col.name].histogram = rows_to_histogram(
-                        hist_rows, self.config.histogram_buckets
-                    )
-                except Exception as exc:
-                    logger.debug("histogram skipped for %s.%s: %s", table.name, col.name, exc)
-                finally:
-                    cur.close()
-
-        self._last_sample_meta = (sampled, sample_size if sampled else sample_rows)
-        return stats
-
-    def _build_select(
-        self, columns: Sequence[ColumnMeta], *, use_approx: bool
-    ) -> tuple[str, list[tuple[str, str]]]:
-        if not use_approx:
-            return build_stats_select(columns, self.config, quote_ident=self.quote_ident)
-
-        pieces: list[str] = []
-        aliases: list[tuple[str, str]] = []
-        for col in columns:
-            q = self.quote_ident(col.name)
-            pieces.append(f"COUNT(*) - COUNT({q}) AS {self.quote_ident(col.name + '__nulls')}")
-            aliases.append((col.name, "nulls"))
-            if is_comparable_for_minmax(col.portable_type.kind):
-                pieces.append(f"MIN({q}) AS {self.quote_ident(col.name + '__min')}")
-                aliases.append((col.name, "min"))
-                pieces.append(f"MAX({q}) AS {self.quote_ident(col.name + '__max')}")
-                aliases.append((col.name, "max"))
-            pieces.append(
-                f"approx_count_distinct({q}) AS {self.quote_ident(col.name + '__distinct')}"
-            )
-            aliases.append((col.name, "distinct"))
-        pieces.append("COUNT(*) AS __sample_rows")
-        return ", ".join(pieces), aliases
-
-    def _sample_clause(self, row_count: int | None) -> tuple[str, bool, int | None]:
+    def build_sample_plan(self, table: TableRef, row_count: int | None) -> SamplePlan:
         cfg = self.config
         if cfg.sample_percent is not None:
-            return f"TABLESAMPLE ({cfg.sample_percent} PERCENT)", True, None
-        if cfg.sample_size is not None and row_count is not None and row_count > cfg.sample_size:
-            return f"TABLESAMPLE ({cfg.sample_size} ROWS)", True, cfg.sample_size
-        return "", False, None
+            return SamplePlan(
+                clause=f"TABLESAMPLE ({cfg.sample_percent} PERCENT)",
+                sampled=True,
+                distinct_is_estimate=True,
+            )
+        if cfg.sample_size is not None:
+            if row_count is not None and row_count <= cfg.sample_size:
+                return SamplePlan()
+            return SamplePlan(
+                clause=f"TABLESAMPLE ({cfg.sample_size} ROWS)",
+                sampled=True,
+                sample_size=cfg.sample_size,
+                distinct_is_estimate=True,
+            )
+        return SamplePlan()
+
+    def approx_distinct_expr(self, quoted_col: str) -> str:
+        return f"approx_count_distinct({quoted_col})"
+
+    def execute_query(self, sql: str, params: Sequence[Any] | None = None) -> list[tuple]:
+        try:
+            with self._cursor() as cur:
+                cur.execute(sql, params or None)
+                rows = cur.fetchall() or []
+                return [tuple(r) for r in rows]
+        except Exception as exc:  # noqa: BLE001
+            raise AdapterError(str(exc), transient=_is_transient(exc), cause=exc) from exc
+
+
+def _is_transient(exc: BaseException) -> bool:
+    msg = str(exc).lower()
+    return bool(re.search(r"timeout|temporar|retry|throttle|429|503|rate.?limit", msg))
