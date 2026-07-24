@@ -38,9 +38,13 @@ This folder is **interview-ready**: every problem guide opens with a **timeboxed
 | 12 | Meeting scheduler | Strategy, domain services, value objects | [12-meeting-scheduler.md](./12-meeting-scheduler.md) |
 | 13 | Shopping cart / checkout | Builder, Strategy, Saga (conceptual) | [13-shopping-cart-checkout.md](./13-shopping-cart-checkout.md) |
 | 14 | Pub-sub message hub | Observer, Mediator, Strategy | [14-pub-sub-message-hub.md](./14-pub-sub-message-hub.md) |
+| 15 | Worker pool manager | Strategy, Producer-Consumer | [15-worker-pool-manager.md](./15-worker-pool-manager.md) |
+| 16 | URL shortener | Strategy, Repository | [16-url-shortener.md](./16-url-shortener.md) |
+| 17 | Social media feed | Strategy, Observer, Facade | [17-social-media-feed.md](./17-social-media-feed.md) |
 
 ## Related material in this repo
 
+- **Master question bank** (every LLD question in this repo, categorized, with gaps called out): [../../LLD_SYSTEM_DESIGN_INTERVIEW_QUESTIONS.md](../../LLD_SYSTEM_DESIGN_INTERVIEW_QUESTIONS.md)
 - Pattern-to-problem catalog: [../../LLD_PROBLEMS_BY_DESIGN_PATTERN.md](../../LLD_PROBLEMS_BY_DESIGN_PATTERN.md)
 - Pattern usage notes: [../../DESIGN_PATTERNS_WHEN_TO_USE_AND_EXAMPLES.md](../../DESIGN_PATTERNS_WHEN_TO_USE_AND_EXAMPLES.md)
 - Deeper dives elsewhere under `docs/lld/` (Splitwise, train booking, connection pool, etc.)—this playbook is **interview-shaped**; those folders may go deeper on one domain.
