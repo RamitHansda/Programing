@@ -1,0 +1,45 @@
+# Example profiler configuration
+#
+# Usage:
+#   data-profiler --engine sqlite --database demos/data/demo.sqlite --config examples/config.yaml -o out.json
+#   data-profiler --engine snowflake --config examples/config.yaml -o snowflake_profile.json
+
+profiler:
+  sample_size: 100000          # max rows for column stats; null = full scan
+  sample_percent: null         # alternative: TABLESAMPLE percent when supported
+  stats_depth: basic           # basic | full (full enables histograms)
+  histogram_buckets: 10
+  concurrency: 4               # parallel table workers (sqlite forced sequential)
+  max_tables: null
+  include_schemas: []
+  exclude_schemas: [INFORMATION_SCHEMA, information_schema]
+  include_tables: []
+  exclude_tables: []
+  estimate_row_counts: true    # prefer cheap estimates on Snowflake when available
+  resume_state_path: .profiler_state.json
+  output_format: json          # json | yaml | parquet
+  fail_fast: false
+
+# Connection block is engine-specific. CLI --engine selects the adapter.
+# For Snowflake / Databricks you can also use environment variables
+# (SNOWFLAKE_*, DATABRICKS_*); see README.
+
+connection:
+  # sqlite / duckdb:
+  # database: demos/data/demo.sqlite
+
+  # snowflake:
+  # account: xy12345.us-east-1
+  # user: profiler_user
+  # password: "****"
+  # warehouse: COMPUTE_WH
+  # database: ANALYTICS
+  # schema: PUBLIC
+  # role: PROFILER_ROLE
+
+  # databricks:
+  # server_hostname: adb-xxxx.azuredatabricks.net
+  # http_path: /sql/1.0/warehouses/abcd
+  # access_token: "****"
+  # catalog: main
+  # schema: default
