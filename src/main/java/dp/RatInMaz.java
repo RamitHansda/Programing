@@ -36,7 +36,6 @@ public class RatInMaz {
             }
 
 
-        return (matrix[R - 1][C - 1] > 0) ?
-                matrix[R - 1][C - 1] : 0;
+        return Math.max(matrix[R - 1][C - 1], 0);
     }
 }
