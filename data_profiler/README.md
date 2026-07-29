@@ -9,6 +9,9 @@ table/column metadata and statistics.
 ```bash
 cd data_profiler
 python3 -m venv .venv && source .venv/bin/activate
+
+# Upgrade pip/setuptools first (required for editable installs)
+python -m pip install -U pip setuptools wheel
 pip install -e ".[dev]"
 
 pytest -q
@@ -16,6 +19,16 @@ python demos/run_demo.py
 
 data-profiler --engine sqlite --database demos/data/demo.sqlite \
   --config examples/config.yaml -o demos/output/sqlite_profile.json -v
+```
+
+If `pip install -e .` still fails on an older pip, either upgrade pip as above
+or run without editable mode:
+
+```bash
+pip install .
+# or run demos/tests with PYTHONPATH
+PYTHONPATH=src pytest -q
+PYTHONPATH=src python demos/run_demo.py
 ```
 
 ## Cloud engines
