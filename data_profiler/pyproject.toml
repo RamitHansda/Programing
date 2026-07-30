@@ -7,7 +7,7 @@ name = "data-profiler"
 version = "0.1.0"
 description = "Configurable multi-database data profiling utility"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.9"
 dependencies = [
   "pyyaml>=6.0",
   "duckdb>=1.0.0",
