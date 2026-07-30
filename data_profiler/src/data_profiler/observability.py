@@ -49,6 +49,7 @@ def config_fingerprint(engine: str, config: dict[str, Any], connection_hint: str
                 "sample_percent",
                 "stats_depth",
                 "histogram_buckets",
+                "distinct_scope",
                 "include_schemas",
                 "exclude_schemas",
                 "include_tables",

@@ -40,6 +40,11 @@ def write_profile(doc: ProfileDocument, path: str | Path, fmt: str = "json") -> 
     return path
 
 
+def bundled_schema_path() -> Path:
+    """The portable schema ships as package data, so it resolves when installed too."""
+    return Path(__file__).resolve().parent / "schema" / "profile_schema.json"
+
+
 def validate_against_schema(payload: dict[str, Any], schema_path: str | Path | None = None) -> None:
     """Validate a profile document against the bundled JSON Schema when available.
 
@@ -55,7 +60,7 @@ def validate_against_schema(payload: dict[str, Any], schema_path: str | Path | N
         raise ValueError("tables must be a list")
 
     if schema_path is None:
-        schema_path = Path(__file__).resolve().parents[2] / "schema" / "profile_schema.json"
+        schema_path = bundled_schema_path()
     schema_path = Path(schema_path)
     if not schema_path.exists():
         return
@@ -229,6 +234,8 @@ def table_from_dict(raw: dict[str, Any]) -> TableProfile:
                     distinct_count_is_estimate=bool(
                         stats_raw.get("distinct_count_is_estimate", False)
                     ),
+                    distinct_from_sample=bool(stats_raw.get("distinct_from_sample", False)),
+                    min_max_from_sample=bool(stats_raw.get("min_max_from_sample", False)),
                     sampled_rows=stats_raw.get("sampled_rows"),
                     histogram=hist,
                 ),
