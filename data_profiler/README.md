@@ -6,6 +6,15 @@ table/column metadata and statistics.
 
 ## Quick start
 
+**Python:** 3.9+ (3.10+ recommended). macOS system Python is often 3.9 — that works.
+If you prefer a newer runtime:
+
+```bash
+# macOS (Homebrew)
+brew install python@3.12
+# then use python3.12 -m venv .venv
+```
+
 ```bash
 cd data_profiler
 python3 -m venv .venv && source .venv/bin/activate
