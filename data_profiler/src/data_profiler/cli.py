@@ -40,6 +40,18 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--sample-percent", type=float, default=None)
     p.add_argument("--concurrency", type=int, default=None)
     p.add_argument("--stats-depth", choices=["basic", "full"], default=None)
+    p.add_argument(
+        "--distinct-scope",
+        choices=["table", "sample"],
+        default=None,
+        help="Compute distinct counts over the whole table (accurate) or the sample (cheap)",
+    )
+    p.add_argument(
+        "--timeout-per-table",
+        type=float,
+        default=None,
+        help="Wall-clock budget per table in seconds; the in-flight query is cancelled",
+    )
     p.add_argument("--max-tables", type=int, default=None)
     p.add_argument("--resume-state", default=None, help="Checkpoint file for resume")
     p.add_argument("--include-schema", action="append", default=[])
@@ -75,6 +87,10 @@ def main(argv: list[str] | None = None) -> int:
         profiler_raw["concurrency"] = args.concurrency
     if args.stats_depth is not None:
         profiler_raw["stats_depth"] = args.stats_depth
+    if args.distinct_scope is not None:
+        profiler_raw["distinct_scope"] = args.distinct_scope
+    if args.timeout_per_table is not None:
+        profiler_raw["timeout_seconds_per_table"] = args.timeout_per_table
     if args.max_tables is not None:
         profiler_raw["max_tables"] = args.max_tables
     if args.resume_state is not None:

@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import threading
 import time
 import uuid
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout, as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import TimeoutError as FuturesTimeout
+from dataclasses import dataclass
 
 from data_profiler.adapters.base import DatabaseAdapter, StatsResult
 from data_profiler.config import ProfilerConfig
@@ -24,6 +27,14 @@ from data_profiler.persistence import ResumeState, write_profile
 logger = get_logger(__name__)
 
 SCHEMA_VERSION = "1.0.0"
+
+
+@dataclass
+class AttemptResult:
+    """One profiling attempt, with retryability carried as data, not as a string."""
+
+    profile: TableProfile
+    transient: bool = False
 
 
 class DataProfiler:
@@ -53,6 +64,7 @@ class DataProfiler:
             sample_size=self.config.sample_size,
             stats_depth=self.config.stats_depth,
             supports_concurrent=self.adapter.supports_concurrent_profiling,
+            timeout_enforceable=self._timeout_enforceable(),
         )
 
         self.adapter.connect()
@@ -108,6 +120,10 @@ class DataProfiler:
         )
         return doc
 
+    def _timeout_enforceable(self) -> bool:
+        """A per-table timeout needs a watchdog thread, which needs a safe adapter."""
+        return self.config.timeout_seconds_per_table is not None and self.adapter.is_thread_safe
+
     def _profile_tables(self, tables: list[TableRef], *, run_id: str) -> list[TableProfile]:
         results: list[TableProfile] = []
         pending: list[TableRef] = []
@@ -120,6 +136,24 @@ class DataProfiler:
 
         if not pending:
             return results
+
+        if self.config.timeout_seconds_per_table is not None and not self.adapter.is_thread_safe:
+            logger.warning(
+                "%s is thread-confined; timeout_seconds_per_table cannot be enforced "
+                "and will be ignored",
+                self.adapter.engine_name,
+            )
+
+        if self.config.prefetch_catalog:
+            t0 = time.perf_counter()
+            self.adapter.prefetch_catalog(pending)
+            log_event(
+                logger,
+                "catalog_prefetched",
+                run_id=run_id,
+                tables=len(pending),
+                elapsed_seconds=round(time.perf_counter() - t0, 3),
+            )
 
         use_pool = (
             self.adapter.supports_concurrent_profiling
@@ -137,9 +171,9 @@ class DataProfiler:
             return results
 
         workers = min(self.config.concurrency, len(pending))
-        with ThreadPoolExecutor(max_workers=workers) as pool:
+        with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="dp-table") as pool:
             futures = {
-                pool.submit(self._profile_one_with_retry, table, run_id): table
+                pool.submit(self._profile_one_with_retry, table, run_id=run_id): table
                 for table in pending
             }
             for fut in as_completed(futures):
@@ -148,14 +182,7 @@ class DataProfiler:
                     profile = fut.result()
                 except Exception as exc:  # noqa: BLE001
                     logger.exception("Unhandled error profiling %s", table.fully_qualified_name)
-                    profile = TableProfile(
-                        catalog=table.catalog,
-                        schema=table.schema,
-                        name=table.name,
-                        row_count=None,
-                        columns=[],
-                        error=str(exc),
-                    )
+                    profile = self._error_profile(table, str(exc))
                 results.append(profile)
                 self._checkpoint(profile)
                 if profile.error and self.config.fail_fast:
@@ -174,28 +201,29 @@ class DataProfiler:
 
     def _profile_one_with_retry(self, table: TableRef, *, run_id: str) -> TableProfile:
         attempts = self.config.max_retries + 1
-        last: TableProfile | None = None
+        last: AttemptResult | None = None
         for attempt in range(1, attempts + 1):
             last = self._profile_one(table, run_id=run_id, attempt=attempt)
-            if last.error is None:
-                return last
-            if attempt < attempts and self._looks_transient(last.error):
+            if last.profile.error is None:
+                return last.profile
+            if attempt < attempts and last.transient:
                 log_event(
                     logger,
                     "table_retry",
                     run_id=run_id,
                     table=table.fully_qualified_name,
                     attempt=attempt,
-                    error=last.error,
+                    error=last.profile.error,
                 )
                 time.sleep(min(2 ** (attempt - 1), 8))
                 continue
             break
         assert last is not None
-        return last
+        return last.profile
 
     @staticmethod
     def _looks_transient(error: str | None) -> bool:
+        """Fallback classification for exceptions that are not AdapterError."""
         if not error:
             return False
         msg = error.lower()
@@ -204,7 +232,18 @@ class DataProfiler:
             for token in ("timeout", "temporar", "retry", "throttle", "429", "503", "suspend")
         )
 
-    def _profile_one(self, table: TableRef, *, run_id: str, attempt: int = 1) -> TableProfile:
+    def _error_profile(self, table: TableRef, error: str, duration_ms: float | None = None):
+        return TableProfile(
+            catalog=table.catalog,
+            schema=table.schema,
+            name=table.name,
+            row_count=None,
+            columns=[],
+            error=error,
+            duration_ms=duration_ms,
+        )
+
+    def _profile_one(self, table: TableRef, *, run_id: str, attempt: int = 1) -> AttemptResult:
         t0 = time.perf_counter()
         log_event(
             logger,
@@ -213,17 +252,11 @@ class DataProfiler:
             table=table.fully_qualified_name,
             attempt=attempt,
         )
-        timeout = self.config.timeout_seconds_per_table
         try:
-            if timeout is not None:
-                # Soft wall-clock budget via a one-shot executor so we can surface
-                # TableTimeoutError without killing the process.
-                with ThreadPoolExecutor(max_workers=1) as pool:
-                    fut = pool.submit(self._profile_one_body, table)
-                    try:
-                        profile = fut.result(timeout=timeout)
-                    except FuturesTimeout as exc:
-                        raise TableTimeoutError(table.fully_qualified_name, timeout) from exc
+            if self._timeout_enforceable():
+                profile = self._profile_with_watchdog(
+                    table, float(self.config.timeout_seconds_per_table)
+                )
             else:
                 profile = self._profile_one_body(table)
             profile.duration_ms = round((time.perf_counter() - t0) * 1000, 2)
@@ -237,38 +270,56 @@ class DataProfiler:
                 columns=len(profile.columns),
                 error=profile.error,
             )
-            return profile
-        except TableTimeoutError as exc:
-            return TableProfile(
-                catalog=table.catalog,
-                schema=table.schema,
-                name=table.name,
-                row_count=None,
-                columns=[],
-                error=str(exc),
-                duration_ms=round((time.perf_counter() - t0) * 1000, 2),
-            )
+            return AttemptResult(profile)
         except AdapterError as exc:
-            return TableProfile(
-                catalog=table.catalog,
-                schema=table.schema,
-                name=table.name,
-                row_count=None,
-                columns=[],
+            elapsed_ms = round((time.perf_counter() - t0) * 1000, 2)
+            log_event(
+                logger,
+                "table_failed",
+                run_id=run_id,
+                table=table.fully_qualified_name,
+                duration_ms=elapsed_ms,
                 error=str(exc),
-                duration_ms=round((time.perf_counter() - t0) * 1000, 2),
+                transient=exc.transient,
+            )
+            return AttemptResult(
+                self._error_profile(table, str(exc), elapsed_ms),
+                transient=exc.transient,
             )
         except Exception as exc:  # noqa: BLE001
             logger.exception("Failed profiling %s", table.fully_qualified_name)
-            return TableProfile(
-                catalog=table.catalog,
-                schema=table.schema,
-                name=table.name,
-                row_count=None,
-                columns=[],
-                error=str(exc),
-                duration_ms=round((time.perf_counter() - t0) * 1000, 2),
+            return AttemptResult(
+                self._error_profile(
+                    table, str(exc), round((time.perf_counter() - t0) * 1000, 2)
+                ),
+                transient=self._looks_transient(str(exc)),
             )
+
+    def _profile_with_watchdog(self, table: TableRef, timeout: float) -> TableProfile:
+        """Run one table on a watchdog thread and abort it when the budget expires.
+
+        The point of the budget is to bound wall clock, so on expiry we ask the
+        adapter to cancel its in-flight statement and shut the executor down
+        without waiting. Blocking on the abandoned thread — which is what a
+        ``with ThreadPoolExecutor(...)`` block does on exit — would surface a
+        timeout error while still paying the full runtime.
+        """
+        worker: dict[str, int] = {}
+
+        def body() -> TableProfile:
+            worker["thread_id"] = threading.get_ident()
+            return self._profile_one_body(table)
+
+        pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="dp-watchdog")
+        try:
+            future = pool.submit(body)
+            try:
+                return future.result(timeout=timeout)
+            except FuturesTimeout as exc:
+                self.adapter.cancel_active_query(thread_id=worker.get("thread_id"))
+                raise TableTimeoutError(table.fully_qualified_name, timeout) from exc
+        finally:
+            pool.shutdown(wait=False)
 
     def _profile_one_body(self, table: TableRef) -> TableProfile:
         columns_meta = self.adapter.get_columns(table)
