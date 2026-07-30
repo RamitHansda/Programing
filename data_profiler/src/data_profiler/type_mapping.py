@@ -6,7 +6,6 @@ import re
 
 from data_profiler.models import PortableType, TypeKind
 
-
 _INTEGER = re.compile(
     r"^(tinyint|smallint|mediumint|int|integer|bigint|int\d+|uint\d+|hugeint|ubyte|ushort|uinteger|ubigint)$",
     re.I,
