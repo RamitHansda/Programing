@@ -1,101 +1,44 @@
 # Data Profiler
 
 Configurable multi-database profiling utility for **Snowflake**, **Databricks**,
-**DuckDB**, and **SQLite**. Scans tables and writes a portable JSON/YAML profile
-of table/column metadata and statistics.
+**DuckDB**, and **SQLite**. Scans tables and writes a portable JSON/YAML/Parquet
+profile of table/column metadata and statistics.
 
-Architecture details: [DESIGN.md](DESIGN.md)
+Architecture and trade-offs: [DESIGN.md](DESIGN.md)
 
 ---
 
-## Run on a fresh machine
+## Quick start
 
-### Prerequisites
-
-| Tool | Version | Notes |
-|---|---|---|
-| Git | any recent | to clone the repo |
-| Python | **3.9+** (3.10–3.12 recommended) | macOS system Python is often 3.9 — that works |
-
-Check your Python:
+Requires Python 3.9+ (3.10–3.12 recommended).
 
 ```bash
-python3 --version
-```
-
-Optional (macOS) — install a newer Python:
-
-```bash
-brew install python@3.12
-```
-
-### 1) Clone
-
-```bash
-git clone -b cursor/take-home-data-profiler-212b \
-  https://github.com/RamitHansda/Programing.git
-cd Programing/data_profiler
-```
-
-Or, if you already have the repo:
-
-```bash
-cd Programing/data_profiler
-git fetch origin
-git checkout cursor/take-home-data-profiler-212b
-git pull
-```
-
-### 2) Create a virtual environment
-
-**macOS / Linux**
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-```
-
-**Windows (PowerShell)**
-
-```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-```
-
-Confirm the venv is active (`which python` / `where python` should point inside `.venv`).
-
-### 3) Install dependencies
-
-Always upgrade packaging tools first (avoids editable-install errors on older pip):
-
-```bash
+cd data_profiler
+python3 -m venv .venv && source .venv/bin/activate   # Windows: .\.venv\Scripts\Activate.ps1
 python -m pip install -U pip setuptools wheel
 pip install -e ".[dev]"
 ```
 
-If `pip install -e .` still fails:
-
-```bash
-pip install ".[dev]"
-# or run without installing:
-#   export PYTHONPATH=src   (Windows: set PYTHONPATH=src)
-```
-
-### 4) Run the demo
-
-Seeds local SQLite + DuckDB databases and profiles them end-to-end:
+Seed two local databases and profile them end to end:
 
 ```bash
 python demos/run_demo.py
 ```
 
-Expected: both engines report `"status": "completed"`.  
-Outputs: `demos/output/sqlite_profile.json` and `demos/output/duckdb_profile.json`.
+Both engines should report `"status": "completed"` and write
+`demos/output/sqlite_profile.json` and `demos/output/duckdb_profile.json`.
 
-### 5) Run tests
+Tests and lint:
 
 ```bash
 pytest -q
+ruff check src tests demos
+```
+
+Cost model on a synthetic 200-table catalog:
+
+```bash
+python demos/benchmark.py --tables 200 --columns 10 --rows 20000
 ```
 
 ---
@@ -106,70 +49,91 @@ pytest -q
 # Seed demo DBs only (if you skipped run_demo.py)
 python demos/seed_demo.py
 
-# Profile SQLite
+# Profile SQLite with the example config
 data-profiler --engine sqlite \
   --database demos/data/demo.sqlite \
   --config examples/config.yaml \
   -o demos/output/sqlite_profile.json -v
 
-# Profile DuckDB
+# Profile DuckDB with histograms
 data-profiler --engine duckdb \
   --database demos/data/demo.duckdb \
   --stats-depth full \
   -o demos/output/duckdb_profile.json -v
 ```
 
-### Useful flags
+### Accuracy vs. speed knobs
 
 | Flag | Meaning |
 |---|---|
 | `--engine` | `sqlite` \| `duckdb` \| `snowflake` \| `databricks` |
 | `--database` | Path for sqlite / duckdb files |
 | `--config` | YAML knobs + connection block (`examples/config.yaml`) |
-| `--sample-size` | Max rows used for column stats |
-| `--stats-depth` | `basic` or `full` (enables histograms) |
+| `--sample-size` | Rows scanned for min/max/null stats (omit sampling with `sample_size: null`) |
+| `--sample-percent` | Percentage sampling instead of a fixed row count |
+| `--distinct-scope` | `table` (accurate cardinality) or `sample` (cheaper, lower bound) |
+| `--stats-depth` | `basic` or `full` (adds histograms; the most expensive option) |
 | `--concurrency` | Parallel table workers (cloud engines) |
-| `-o` / `--output` | Output path (`.json` or `.yaml`) |
+| `--timeout-per-table` | Wall-clock budget per table; the in-flight query is cancelled |
+| `--max-tables` | Cap discovery on huge catalogs |
+| `--resume-state` | Checkpoint file; a re-run skips already-profiled tables |
+| `-o` / `--output`, `--format` | Output path and `json` \| `yaml` \| `parquet` |
 | `-v` | Verbose structured logs |
+
+### Reading the output
+
+Statistics say where they came from, which matters as soon as sampling is on:
+
+```json
+{
+  "name": "order_id",
+  "type": { "kind": "integer", "native": "NUMBER(38,0)", "nullable": false },
+  "stats": {
+    "min": 1042, "max": 998304,
+    "min_max_from_sample": true,
+    "null_count": 0, "null_ratio": 0.0,
+    "distinct_count": 4821004,
+    "distinct_count_is_estimate": true,
+    "distinct_from_sample": false,
+    "sampled_rows": 100000
+  }
+}
+```
+
+- `min_max_from_sample: true` — the true range is at least this wide.
+- `distinct_from_sample: false` — cardinality was measured over the whole table
+  (HLL when the engine supports it), so it is not capped by the sample size.
+- Table-level `row_count` always describes the table, never the sample.
+
+Portable schema: `src/data_profiler/schema/profile_schema.json`.
 
 ---
 
-## Snowflake / Databricks (optional)
+## Snowflake / Databricks
 
 ```bash
 pip install -e ".[snowflake,databricks]"
 ```
 
-Set secrets via environment variables (preferred over YAML):
+Set secrets via environment variables (preferred over YAML — anything in the
+config file is redacted from the output document, but env vars keep it off disk):
 
 ```bash
 # Snowflake
-export SNOWFLAKE_ACCOUNT=...
-export SNOWFLAKE_USER=...
-export SNOWFLAKE_PASSWORD=...
-export SNOWFLAKE_WAREHOUSE=...
-export SNOWFLAKE_DATABASE=...
+export SNOWFLAKE_ACCOUNT=... SNOWFLAKE_USER=... SNOWFLAKE_PASSWORD=...
+export SNOWFLAKE_WAREHOUSE=... SNOWFLAKE_DATABASE=...
 data-profiler --engine snowflake --config examples/config.yaml -o snowflake.json
 
 # Databricks
-export DATABRICKS_SERVER_HOSTNAME=...
-export DATABRICKS_HTTP_PATH=...
-export DATABRICKS_TOKEN=...
+export DATABRICKS_SERVER_HOSTNAME=... DATABRICKS_HTTP_PATH=... DATABRICKS_TOKEN=...
 data-profiler --engine databricks --config examples/config.yaml -o databricks.json
 ```
 
 Windows PowerShell uses `$env:SNOWFLAKE_ACCOUNT="..."` instead of `export`.
 
----
-
-## Troubleshooting
-
-| Error | Fix |
-|---|---|
-| `requires a different Python: 3.9.x not in '>=3.10'` | Pull latest branch (`requires-python >=3.9`) or install Python 3.10+ |
-| `setup.py or setup.cfg not found` / editable mode error | `python -m pip install -U pip setuptools wheel` then retry |
-| `data-profiler: command not found` | Activate `.venv`, or re-run `pip install -e .` |
-| DuckDB / package build fails on old OS | Use Python 3.10–3.12 from Homebrew / pyenv |
+Required privileges and engine-specific caveats (Snowflake `INFORMATION_SCHEMA`
+scope and row-count staleness, Unity Catalog fallback) are documented in
+[DESIGN.md](DESIGN.md#assumptions--privileges).
 
 ---
 
@@ -178,10 +142,10 @@ Windows PowerShell uses `$env:SNOWFLAKE_ACCOUNT="..."` instead of `export`.
 ```
 data_profiler/
   README.md                 ← you are here
-  DESIGN.md                 ← architecture & assumptions
+  DESIGN.md                 ← architecture, cost model, assumptions
   examples/config.yaml
-  schema/profile_schema.json
-  demos/                    ← seed + end-to-end demo
+  demos/                    ← seed, end-to-end demo, benchmark
   src/data_profiler/        ← library + CLI
+    schema/                 ← portable profile JSON Schema
   tests/
 ```
