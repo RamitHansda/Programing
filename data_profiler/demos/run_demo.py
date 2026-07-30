@@ -10,10 +10,10 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT))
 
-from demos.seed_demo import seed_duckdb, seed_sqlite  # noqa: E402
 from data_profiler.adapters import create_adapter  # noqa: E402
 from data_profiler.config import ProfilerConfig  # noqa: E402
 from data_profiler.profiler import DataProfiler  # noqa: E402
+from demos.seed_demo import seed_duckdb, seed_sqlite  # noqa: E402
 
 
 def profile_engine(engine: str, database: Path, output: Path, **cfg_kwargs) -> dict:
@@ -70,7 +70,8 @@ def main() -> None:
             if t["name"] == table or t["name"].endswith("." + table):
                 for c in t["columns"]:
                     if c["name"] == col:
-                        print(f"  {doc['run']['engine']}.{t['fully_qualified_name']}.{col}: {c['type']}")
+                        engine = doc["run"]["engine"]
+                        print(f"  {engine}.{t['fully_qualified_name']}.{col}: {c['type']}")
 
 
 if __name__ == "__main__":

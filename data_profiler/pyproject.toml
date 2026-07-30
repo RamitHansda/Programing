@@ -17,7 +17,13 @@ dependencies = [
 snowflake = ["snowflake-connector-python>=3.6.0"]
 databricks = ["databricks-sql-connector>=3.0.0"]
 parquet = ["pyarrow>=14.0.0"]
-dev = ["pytest>=8.0", "pytest-cov>=5.0", "jsonschema>=4.0"]
+dev = [
+  "pytest>=8.0",
+  "pytest-cov>=5.0",
+  "jsonschema>=4.0",
+  "sqlglot>=25.0",
+  "ruff>=0.5",
+]
 
 [project.scripts]
 data-profiler = "data_profiler.cli:main"
@@ -25,6 +31,17 @@ data-profiler = "data_profiler.cli:main"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+data_profiler = ["schema/*.json"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "BLE"]
+ignore = ["UP006", "UP007", "UP035", "UP045"]
