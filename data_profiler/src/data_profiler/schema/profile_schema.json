@@ -88,6 +88,14 @@
             "null_ratio": { "type": ["number", "null"] },
             "distinct_count": { "type": ["integer", "null"] },
             "distinct_count_is_estimate": { "type": "boolean" },
+            "distinct_from_sample": {
+              "type": "boolean",
+              "description": "True when cardinality was measured on a sample, making it a lower bound rather than an estimate of the table."
+            },
+            "min_max_from_sample": {
+              "type": "boolean",
+              "description": "True when min/max come from a sample and therefore understate the true range."
+            },
             "sampled_rows": { "type": ["integer", "null"] },
             "histogram": {
               "type": ["object", "null"],

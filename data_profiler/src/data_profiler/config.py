@@ -24,7 +24,9 @@ class ProfilerConfig:
       - resume_state_path: persist successful tables for crash recovery
       - timeout_seconds_per_table: soft wall-clock budget per table
       - max_histogram_columns: cost governor for stats_depth=full
-      - skip_exact_count_when_sampling: avoid double full-table COUNT(*)
+      - distinct_scope: cardinality over the whole table vs. over the sample
+      - prefetch_catalog: bulk catalog reads instead of per-table queries
+      - skip_exact_count_when_sampling: drop row counts to save a COUNT(*)
     """
 
     sample_size: int | None = 100_000
@@ -40,7 +42,16 @@ class ProfilerConfig:
     include_tables: list[str] = field(default_factory=list)
     exclude_tables: list[str] = field(default_factory=list)
     estimate_row_counts: bool = False
-    skip_exact_count_when_sampling: bool = True
+    # Off by default: the engines we target answer COUNT(*) from metadata or file
+    # statistics, so skipping it saves little and costs every consumer a row
+    # count — which also disables null-count extrapolation and the
+    # "table smaller than the sample" shortcut.
+    skip_exact_count_when_sampling: bool = False
+    # "table": one extra full-table approx-distinct pass when sampling, because
+    # cardinality measured on a sample is bounded by the sample size.
+    # "sample": cheaper, but distinct counts are lower bounds.
+    distinct_scope: str = "table"
+    prefetch_catalog: bool = True
     resume_state_path: str | None = None
     output_format: str = "json"  # json | yaml | parquet
     fail_fast: bool = False
@@ -52,8 +63,12 @@ class ProfilerConfig:
             raise ConfigurationError("stats_depth must be 'basic' or 'full'")
         if self.output_format not in {"json", "yaml", "parquet"}:
             raise ConfigurationError("output_format must be json, yaml, or parquet")
+        if self.distinct_scope not in {"table", "sample"}:
+            raise ConfigurationError("distinct_scope must be 'table' or 'sample'")
         if self.concurrency < 1:
             raise ConfigurationError("concurrency must be >= 1")
+        if self.sample_size is not None and self.sample_size < 1:
+            raise ConfigurationError("sample_size must be >= 1 (or null to disable sampling)")
         if self.sample_percent is not None and not (0 < self.sample_percent <= 100):
             raise ConfigurationError("sample_percent must be in (0, 100]")
         if self.timeout_seconds_per_table is not None and self.timeout_seconds_per_table <= 0:
@@ -67,12 +82,12 @@ class ProfilerConfig:
         return asdict(self)
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "ProfilerConfig":
+    def from_dict(cls, data: dict[str, Any]) -> ProfilerConfig:
         known = {f.name for f in cls.__dataclass_fields__.values()}  # type: ignore[attr-defined]
         return cls(**{k: v for k, v in data.items() if k in known})
 
     @classmethod
-    def from_yaml(cls, path: str | Path) -> "ProfilerConfig":
+    def from_yaml(cls, path: str | Path) -> ProfilerConfig:
         with open(path, encoding="utf-8") as fh:
             raw = yaml.safe_load(fh) or {}
         if "profiler" in raw:

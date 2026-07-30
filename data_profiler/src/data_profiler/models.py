@@ -58,12 +58,21 @@ class HistogramBucket:
 
 @dataclass
 class ColumnStats:
+    """Per-column statistics.
+
+    The ``*_from_sample`` flags exist so consumers can tell a measurement from a
+    lower bound: min/max taken from a sample always understate the true range,
+    and a distinct count taken from a sample cannot exceed the sample size.
+    """
+
     min: Any = None
     max: Any = None
     null_count: int | None = None
     null_ratio: float | None = None
     distinct_count: int | None = None
     distinct_count_is_estimate: bool = False
+    distinct_from_sample: bool = False
+    min_max_from_sample: bool = False
     sampled_rows: int | None = None
     histogram: list[HistogramBucket] | None = None
 
@@ -75,6 +84,8 @@ class ColumnStats:
             "null_ratio": self.null_ratio,
             "distinct_count": self.distinct_count,
             "distinct_count_is_estimate": self.distinct_count_is_estimate,
+            "distinct_from_sample": self.distinct_from_sample,
+            "min_max_from_sample": self.min_max_from_sample,
             "sampled_rows": self.sampled_rows,
             "histogram": (
                 {"buckets": [b.to_dict() for b in self.histogram]}
