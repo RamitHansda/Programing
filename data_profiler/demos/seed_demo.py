@@ -10,7 +10,6 @@ from pathlib import Path
 
 import duckdb
 
-
 CUSTOMERS = 500
 ORDERS = 2000
 EVENTS = 5000
@@ -127,6 +126,7 @@ def seed_duckdb(path: Path) -> None:
     )
     rng = random.Random(7)
     categories = ["electronics", "home", "grocery", "apparel", "sports"]
+    tag_pool = ["new", "sale", "popular", "clearance"]
     products = []
     for i in range(1, 301):
         products.append(
@@ -136,7 +136,7 @@ def seed_duckdb(path: Path) -> None:
                 rng.choice(categories),
                 round(rng.uniform(1, 999), 2),
                 f"2023-{(i % 12)+1:02d}-15 10:00:00",
-                [rng.choice(["new", "sale", "popular", "clearance"]) for _ in range(rng.randint(0, 3))],
+                [rng.choice(tag_pool) for _ in range(rng.randint(0, 3))],
             )
         )
     conn.executemany("INSERT INTO products VALUES (?,?,?,?,?,?)", products)
