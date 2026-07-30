@@ -78,6 +78,8 @@ Standard DORA + flow metrics, sourced from Git/CI, **not** from the AI vendor:
 - Per-user spend limits as a guardrail, reviewed monthly.
 - Compare against a crude value proxy: (cycle-time reduction × loaded engineering cost). Directional only — never present it as precise ROI.
 
+> For the full founder-facing cost/return model — fully-loaded cost lines, break-even in hours per engineer, the sensitivity table and objection handling — see [EM-AI-CODING-ASSISTANT-COST-VS-RETURN.md](./EM-AI-CODING-ASSISTANT-COST-VS-RETURN.md).
+
 ### 2.6 Perception (the S, P and E of SPACE)
 
 Quarterly DevEx pulse, 5-point Likert, per-engineer anonymous:
