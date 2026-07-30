@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+from decimal import Decimal
 from typing import Any, Callable, Sequence
 
 from data_profiler.config import ProfilerConfig
@@ -79,7 +81,7 @@ def parse_stats_row(
     row_count: int | None,
     estimate_distinct: bool,
     sampled: bool,
-    distinct_from_sample: bool = True,
+    distinct_from_sample: bool = False,
     into: dict[str, ColumnStats] | None = None,
 ) -> dict[str, ColumnStats]:
     if len(row) != len(aliases):
@@ -115,81 +117,130 @@ def parse_stats_row(
     return by_col
 
 
-def build_histogram_sql(
-    column: ColumnMeta,
-    config: ProfilerConfig,
+@dataclass(frozen=True)
+class HistogramSpec:
+    """Equi-width bucketing for one column, using bounds we already measured."""
+
+    column: str
+    low: Any
+    high: Any
+    buckets: int
+
+    @property
+    def degenerate(self) -> bool:
+        return self.low == self.high
+
+    def edges(self) -> list[tuple[Any, Any]]:
+        width = (self.high - self.low) / self.buckets
+        last = self.buckets - 1
+        return [
+            (self.low + i * width, self.high if i == last else self.low + (i + 1) * width)
+            for i in range(self.buckets)
+        ]
+
+
+def histogram_spec(column: ColumnMeta, stats: ColumnStats, buckets: int) -> HistogramSpec | None:
+    """Derive a bucketing plan from stats already computed, or None if not possible."""
+    if not supports_histogram(column.portable_type.kind):
+        return None
+    low, high = _numeric(stats.min), _numeric(stats.max)
+    if low is None or high is None or high < low:
+        return None
+    return HistogramSpec(column=column.name, low=low, high=high, buckets=max(2, buckets))
+
+
+def build_histogram_batch_sql(
+    specs: Sequence[HistogramSpec],
     *,
     quote_ident: Callable[[str], str],
     source: str,
-) -> str | None:
-    """Equi-width histogram over ``source`` (already sample-aware).
+) -> tuple[str, list[tuple[str, int]]]:
+    """One scan that buckets every numeric column at once.
 
-    The raw index is clamped into ``[0, buckets - 1]`` in a separate step: the
-    naive ``FLOOR((v - min) * buckets / (max - min))`` puts the maximum value in
-    a ``buckets``-th bucket, yielding one extra bucket whose range extends past
-    the data, and float division can land just short of the maximum on that same
-    boundary. Clamping is expressed with CASE rather than LEAST() because SQLite
-    spells that MIN(a, b).
+    The first pass already told us each column's min and max, so there is no need
+    to rediscover the bounds in SQL — which is what forced a separate CTE query
+    per column, i.e. one extra scan per numeric column per table. Conditional
+    aggregates over known edges collapse all of them into a single scan, and
+    computing the edges in Python removes the FLOOR/clamp arithmetic that put the
+    maximum value in an out-of-range bucket.
+
+    The outer buckets are deliberately open-ended (no lower bound on the first,
+    no upper bound on the last). Under sampling this query re-draws its own
+    sample, which can contain a value outside the bounds the first pass measured;
+    with closed edges that row would fall into no bucket at all and the counts
+    would quietly not add up.
     """
-    if not supports_histogram(column.portable_type.kind):
-        return None
-    q = quote_ident(column.name)
-    buckets = max(2, config.histogram_buckets)
-    top = buckets - 1
-    return f"""
-    WITH base AS (
-      SELECT {q} AS v FROM {source} WHERE {q} IS NOT NULL
-    ),
-    bounds AS (
-      SELECT MIN(v) AS mn, MAX(v) AS mx FROM base
-    ),
-    raw AS (
-      SELECT
-        CASE
-          WHEN b.mx = b.mn THEN 0
-          ELSE CAST(FLOOR((base.v - b.mn) * {buckets} / (b.mx - b.mn)) AS INTEGER)
-        END AS bucket_raw,
-        b.mn AS mn, b.mx AS mx
-      FROM base CROSS JOIN bounds b
-    ),
-    hist AS (
-      SELECT
-        CASE
-          WHEN bucket_raw > {top} THEN {top}
-          WHEN bucket_raw < 0 THEN 0
-          ELSE bucket_raw
-        END AS bucket,
-        mn, mx
-      FROM raw
-    )
-    SELECT bucket, COUNT(*) AS cnt, MIN(mn) AS mn, MAX(mx) AS mx
-    FROM hist
-    GROUP BY bucket
-    ORDER BY bucket
-    """
+    pieces: list[str] = []
+    aliases: list[tuple[str, int]] = []
+    for spec in specs:
+        q = quote_ident(spec.column)
+        if spec.degenerate:
+            pieces.append(f"COUNT({q}) AS {quote_ident(spec.column + '__h0')}")
+            aliases.append((spec.column, 0))
+            continue
+        for idx, (low, high) in enumerate(spec.edges()):
+            if idx == 0:
+                predicate = f"{q} < {_literal(high)}"
+            elif idx == spec.buckets - 1:
+                predicate = f"{q} >= {_literal(low)}"
+            else:
+                predicate = f"{q} >= {_literal(low)} AND {q} < {_literal(high)}"
+            pieces.append(
+                f"SUM(CASE WHEN {predicate} THEN 1 ELSE 0 END)"
+                f" AS {quote_ident(spec.column + f'__h{idx}')}"
+            )
+            aliases.append((spec.column, idx))
+    return ", ".join(pieces), aliases
 
 
-def rows_to_histogram(
-    rows: Sequence[Sequence[Any]],
-    buckets: int,
-) -> list[HistogramBucket]:
-    if not rows:
-        return []
-    buckets = max(2, buckets)
-    mn = rows[0][2]
-    mx = rows[0][3]
-    out: list[HistogramBucket] = []
-    for bucket, cnt, _, _ in rows:
-        if mn == mx:
-            label = f"[{mn}, {mn}]"
-        else:
-            width = (mx - mn) / buckets
-            lo = mn + bucket * width
-            hi = mx if bucket >= buckets - 1 else mn + (bucket + 1) * width
-            closing = "]" if bucket >= buckets - 1 else ")"
-            label = f"[{lo}, {hi}{closing}"
-        out.append(HistogramBucket(label=label, count=int(cnt)))
+def parse_histogram_row(
+    specs: Sequence[HistogramSpec],
+    aliases: list[tuple[str, int]],
+    row: Sequence[Any],
+) -> dict[str, list[HistogramBucket]]:
+    if len(row) != len(aliases):
+        raise ValueError(
+            f"histogram row width mismatch: got {len(row)} values for {len(aliases)} aliases"
+        )
+    by_spec = {spec.column: spec for spec in specs}
+    counts: dict[str, dict[int, int]] = {spec.column: {} for spec in specs}
+    for idx, (column, bucket) in enumerate(aliases):
+        value = row[idx]
+        counts[column][bucket] = int(value) if value is not None else 0
+
+    out: dict[str, list[HistogramBucket]] = {}
+    for column, buckets in counts.items():
+        spec = by_spec[column]
+        if spec.degenerate:
+            out[column] = [
+                HistogramBucket(label=f"[{spec.low}, {spec.high}]", count=buckets.get(0, 0))
+            ]
+            continue
+        out[column] = [
+            HistogramBucket(
+                label=f"[{low}, {high}{']' if idx == spec.buckets - 1 else ')'}",
+                count=buckets.get(idx, 0),
+            )
+            for idx, (low, high) in enumerate(spec.edges())
+        ]
     return out
+
+
+def _numeric(value: Any) -> Any:
+    """Accept only real numbers as histogram bounds; they are inlined as literals."""
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, (int, float, Decimal)):
+        return value
+    return None
+
+
+def _literal(value: Any) -> str:
+    if isinstance(value, Decimal):
+        return str(value)
+    if isinstance(value, int):
+        return str(value)
+    return repr(float(value))
 
 
 NUMERIC_KINDS = {

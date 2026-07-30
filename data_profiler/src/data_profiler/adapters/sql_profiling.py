@@ -16,11 +16,12 @@ from typing import Any, Sequence
 from data_profiler.adapters.base import SamplePlan, StatsResult
 from data_profiler.adapters.sql_stats import (
     build_distinct_select,
-    build_histogram_sql,
+    build_histogram_batch_sql,
     build_stats_select,
     exact_distinct,
+    histogram_spec,
+    parse_histogram_row,
     parse_stats_row,
-    rows_to_histogram,
 )
 from data_profiler.models import ColumnMeta, ColumnStats, TableRef
 from data_profiler.type_mapping import supports_histogram
@@ -102,6 +103,7 @@ class SqlProfilingMixin:
             row_count=row_count,
             estimate_distinct=use_approx,
             sampled=plan.sampled,
+            distinct_from_sample=plan.sampled,
         )
 
         if distinct_over_table:
@@ -191,28 +193,32 @@ class SqlProfilingMixin:
                 len(numeric),
                 len(capped),
             )
+        specs = []
         for col in capped:
-            quoted = self.quote_ident(col.name)  # type: ignore[attr-defined]
-            hist_sql = build_histogram_sql(
-                col,
-                self.config,
-                quote_ident=self.quote_ident,  # type: ignore[attr-defined]
-                source=plan.source(qualified, projection=quoted),
+            spec = histogram_spec(col, stats[col.name], self.config.histogram_buckets)
+            if spec is not None:
+                specs.append(spec)
+        if not specs:
+            return
+
+        select_sql, aliases = build_histogram_batch_sql(
+            specs,
+            quote_ident=self.quote_ident,  # type: ignore[attr-defined]
+            source=plan.source(qualified),
+        )
+        try:
+            rows = self.execute_query(f"SELECT {select_sql} FROM {plan.source(qualified)}")
+        except Exception as exc:  # noqa: BLE001 — histograms are best-effort
+            # Warn, not debug: a silent skip here made stats_depth=full look like
+            # it worked while every histogram was quietly dropped.
+            logger.warning(
+                "histogram_failed table=%s columns=%d err=%s",
+                table.fully_qualified_name,
+                len(specs),
+                exc,
             )
-            if not hist_sql:
-                continue
-            try:
-                hist_rows = self.execute_query(hist_sql)
-            except Exception as exc:  # noqa: BLE001 — histogram is best-effort
-                # Warn, not debug: a silent skip here made stats_depth=full look
-                # like it worked while every histogram was quietly dropped.
-                logger.warning(
-                    "histogram_failed table=%s column=%s err=%s",
-                    table.fully_qualified_name,
-                    col.name,
-                    exc,
-                )
-                continue
-            stats[col.name].histogram = rows_to_histogram(
-                hist_rows, self.config.histogram_buckets
-            )
+            return
+        if not rows:
+            return
+        for column, buckets in parse_histogram_row(specs, aliases, list(rows[0])).items():
+            stats[column].histogram = buckets

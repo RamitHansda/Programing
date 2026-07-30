@@ -74,7 +74,10 @@ def test_sqlite_profile_basic(sqlite_db: Path, tmp_path: Path):
     assert by_name["price"].stats.max == 10.5
     assert by_name["price"].stats.null_count == 1
     assert by_name["name"].stats.distinct_count == 3
+    # Nothing was sampled, so no statistic may claim sample provenance.
     assert by_name["price"].stats.min_max_from_sample is False
+    assert by_name["name"].stats.distinct_from_sample is False
+    assert table.sampled is False
     payload = json.loads(out.read_text())
     validate_against_schema(payload)
 
@@ -195,6 +198,65 @@ def test_histograms_survive_sampling(tmp_path: Path):
     assert sum(b.count for b in column.stats.histogram) == 500
 
 
+def test_histograms_for_many_columns_cost_one_query(tmp_path: Path):
+    """Bucketing reuses the bounds from the stats pass, so it is one extra scan."""
+    path = tmp_path / "wide.duckdb"
+    conn = duckdb.connect(str(path))
+    cols = ", ".join(f"c{i} INTEGER" for i in range(6))
+    conn.execute(f"CREATE TABLE wide ({cols})")
+    projection = ", ".join(f"i * {i + 1}" for i in range(6))
+    conn.execute(f"INSERT INTO wide SELECT {projection} FROM range(200) s(i)")
+    conn.close()
+
+    config = ProfilerConfig(
+        sample_size=None, concurrency=1, stats_depth="full", histogram_buckets=4
+    )
+    adapter = create_adapter("duckdb", config, database=str(path))
+    issued: list[str] = []
+    original = adapter.execute_query
+
+    def spy(sql, params=None):
+        issued.append(sql)
+        return original(sql, params)
+
+    adapter.execute_query = spy  # type: ignore[method-assign]
+    table = DataProfiler(adapter, config).run().tables[0]
+
+    assert len(issued) == 2, f"expected stats + one histogram query, got {len(issued)}"
+    for column in table.columns:
+        assert column.stats.histogram is not None
+        assert len(column.stats.histogram) == 4
+        assert sum(b.count for b in column.stats.histogram) == 200
+
+
+def test_histogram_of_a_constant_column_is_a_single_bucket(tmp_path: Path):
+    path = tmp_path / "const.duckdb"
+    conn = duckdb.connect(str(path))
+    conn.execute("CREATE TABLE t (v INTEGER)")
+    conn.execute("INSERT INTO t SELECT 7 FROM range(50)")
+    conn.close()
+
+    config = ProfilerConfig(sample_size=None, concurrency=1, stats_depth="full")
+    adapter = create_adapter("duckdb", config, database=str(path))
+    hist = DataProfiler(adapter, config).run().tables[0].columns[0].stats.histogram
+    assert hist is not None
+    assert [(b.label, b.count) for b in hist] == [("[7, 7]", 50)]
+
+
+def test_all_null_column_has_no_histogram(tmp_path: Path):
+    path = tmp_path / "nulls.duckdb"
+    conn = duckdb.connect(str(path))
+    conn.execute("CREATE TABLE t (v INTEGER)")
+    conn.execute("INSERT INTO t SELECT NULL FROM range(10)")
+    conn.close()
+
+    config = ProfilerConfig(sample_size=None, concurrency=1, stats_depth="full")
+    adapter = create_adapter("duckdb", config, database=str(path))
+    column = DataProfiler(adapter, config).run().tables[0].columns[0]
+    assert column.stats.histogram is None
+    assert column.stats.null_count == 10
+
+
 def test_resume_skips_only_successes(sqlite_db: Path, tmp_path: Path):
     state = tmp_path / "state.json"
     config = ProfilerConfig(
@@ -264,6 +326,42 @@ def test_parquet_output_is_readable(sqlite_db: Path, tmp_path: Path):
     assert table.num_rows == 4  # one row per profiled column
     assert set(table.column_names) >= {"table_fqn", "column_name", "type_kind", "min", "max"}
     assert b"data_profiler_run_json" in table.schema.metadata
+
+
+def test_parquet_carries_the_same_provenance_flags_as_json(sqlite_db: Path, tmp_path: Path):
+    """A flattened format must not silently drop 'this came from a sample'."""
+    pq = pytest.importorskip("pyarrow.parquet")
+    config = ProfilerConfig(sample_size=2, concurrency=1, output_format="parquet")
+    adapter = create_adapter("sqlite", config, database=str(sqlite_db))
+    out = tmp_path / "p.parquet"
+    DataProfiler(adapter, config).run(output_path=str(out))
+    columns = pq.read_table(out).to_pydict()
+    assert set(columns) >= {
+        "min_max_from_sample",
+        "distinct_from_sample",
+        "distinct_count_is_estimate",
+        "sampled_rows",
+        "table_sampled",
+        "table_row_count_is_estimate",
+    }
+    assert all(columns["min_max_from_sample"])
+    assert all(columns["table_sampled"])
+
+
+def test_schema_version_accepts_compatible_minor_versions(sqlite_db: Path, tmp_path: Path):
+    config = ProfilerConfig(sample_size=None, concurrency=1)
+    adapter = create_adapter("sqlite", config, database=str(sqlite_db))
+    out = tmp_path / "v.json"
+    DataProfiler(adapter, config).run(output_path=str(out))
+    payload = json.loads(out.read_text())
+    assert payload["schema_version"] == "1.1.0"
+
+    payload["schema_version"] = "1.0.0"  # an older document stays readable
+    validate_against_schema(payload)
+
+    payload["schema_version"] = "2.0.0"  # a new major is a break, and must say so
+    with pytest.raises(ValueError, match="Unsupported schema_version"):
+        validate_against_schema(payload)
 
 
 def test_redact_secrets():

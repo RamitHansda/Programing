@@ -13,7 +13,11 @@ import pytest
 from data_profiler.adapters.base import SamplePlan
 from data_profiler.adapters.databricks_adapter import DatabricksAdapter
 from data_profiler.adapters.snowflake_adapter import MAX_FIXED_SAMPLE_ROWS, SnowflakeAdapter
-from data_profiler.adapters.sql_stats import build_histogram_sql, build_stats_select
+from data_profiler.adapters.sql_stats import (
+    HistogramSpec,
+    build_histogram_batch_sql,
+    build_stats_select,
+)
 from data_profiler.config import ProfilerConfig
 from data_profiler.models import ColumnMeta, PortableType, TableRef, TypeKind
 
@@ -105,17 +109,16 @@ def test_generated_stats_sql_parses_in_dialect(factory, dialect, cfg_kwargs):
     adapter = factory(config)
     plan = adapter.build_sample_plan(TableRef(name="ORDERS", schema="PUBLIC"), row_count=10_000_000)
     _assert_parses(_stats_sql(adapter, plan), dialect)
-    hist_sql = build_histogram_sql(
-        COLUMNS[0],
-        config,
+    source = plan.source(adapter.qualify(TableRef(name="ORDERS", schema="PUBLIC")))
+    select_sql, _ = build_histogram_batch_sql(
+        [
+            HistogramSpec(column="ID", low=1, high=1000, buckets=4),
+            HistogramSpec(column="AMOUNT", low=0.5, high=99.25, buckets=4),
+        ],
         quote_ident=adapter.quote_ident,
-        source=plan.source(
-            adapter.qualify(TableRef(name="ORDERS", schema="PUBLIC")),
-            projection=adapter.quote_ident("ID"),
-        ),
+        source=source,
     )
-    assert hist_sql is not None
-    _assert_parses(hist_sql, dialect)
+    _assert_parses(f"SELECT {select_sql} FROM {source}", dialect)
 
 
 def test_snowflake_fixed_size_sampling_uses_bernoulli():
