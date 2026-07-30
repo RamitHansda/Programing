@@ -142,13 +142,22 @@ def _stringify(value: Any) -> str | None:
 
 
 class ResumeState:
-    """Incremental checkpoint so a failed run can skip *successful* tables.
+    """Append-only checkpoint so a failed run can skip *successful* tables.
 
     Failures are recorded for observability but intentionally NOT skipped on
     resume — otherwise a transient warehouse error would permanently omit a table.
 
     State is keyed by a config/engine fingerprint so incompatible re-runs cannot
     silently reuse stale profiles.
+
+    **Why a log rather than a document.** Rewriting the whole checkpoint after
+    every table is quadratic in catalog size: 200 tables x 20 columns wrote 286 MB
+    to persist a 1.4 MB profile and made the run 4x slower, and the example config
+    enables checkpointing by default. The file is now one JSON record per line — a
+    fingerprint header, then one line per table outcome — so each table costs one
+    append and replaying the log on startup rebuilds the state, last record
+    winning. A crash mid-append can only damage the final line, which is dropped
+    on load.
     """
 
     def __init__(self, path: str | Path | None, *, fingerprint: str | None = None):
@@ -157,25 +166,41 @@ class ResumeState:
         self.completed: dict[str, dict[str, Any]] = {}
         self.failed: dict[str, dict[str, Any]] = {}
         if self.path and self.path.exists():
-            raw = json.loads(self.path.read_text(encoding="utf-8"))
-            stored_fp = raw.get("fingerprint")
-            if stored_fp and fingerprint and stored_fp != fingerprint:
-                logger.warning(
-                    "Resume state fingerprint mismatch (stored=%s current=%s); starting fresh",
-                    stored_fp,
-                    fingerprint,
-                )
+            self._load(fingerprint)
+
+    def _load(self, fingerprint: str | None) -> None:
+        assert self.path is not None
+        text = self.path.read_text(encoding="utf-8")
+        stored_fp, records = _parse_checkpoint(text, source=str(self.path))
+        if stored_fp and fingerprint and stored_fp != fingerprint:
+            logger.warning(
+                "Resume state fingerprint mismatch (stored=%s current=%s); starting fresh",
+                stored_fp,
+                fingerprint,
+            )
+            # Do not append this run's records onto incompatible history.
+            self.path.unlink()
+            return
+        for record in records:
+            table = record.get("table")
+            if not table:
+                continue
+            if record.get("ok"):
+                self.completed[table] = record.get("profile") or {}
+                self.failed.pop(table, None)
             else:
-                self.completed = raw.get("completed", {})
-                self.failed = raw.get("failed", {})
-                if stored_fp:
-                    self.fingerprint = stored_fp
-                logger.info(
-                    "Loaded resume state successes=%d failures=%d from %s",
-                    len(self.completed),
-                    len(self.failed),
-                    self.path,
-                )
+                self.failed[table] = {
+                    "error": record.get("error"),
+                    "duration_ms": record.get("duration_ms"),
+                }
+        if stored_fp:
+            self.fingerprint = stored_fp
+        logger.info(
+            "Loaded resume state successes=%d failures=%d from %s",
+            len(self.completed),
+            len(self.failed),
+            self.path,
+        )
 
     def get_successful(self, fqn: str) -> TableProfile | None:
         raw = self.completed.get(fqn)
@@ -186,37 +211,84 @@ class ResumeState:
     def mark_success(self, profile: TableProfile) -> None:
         if self.path is None:
             return
-        self.completed[profile.fully_qualified_name] = profile.to_dict()
-        self.failed.pop(profile.fully_qualified_name, None)
-        self.flush()
+        fqn = profile.fully_qualified_name
+        payload = profile.to_dict()
+        self.completed[fqn] = payload
+        self.failed.pop(fqn, None)
+        self._append({"table": fqn, "ok": True, "profile": payload})
 
     def mark_failure(self, profile: TableProfile) -> None:
         if self.path is None:
             return
-        self.failed[profile.fully_qualified_name] = {
-            "error": profile.error,
-            "duration_ms": profile.duration_ms,
-        }
-        self.flush()
+        fqn = profile.fully_qualified_name
+        self.failed[fqn] = {"error": profile.error, "duration_ms": profile.duration_ms}
+        self._append(
+            {
+                "table": fqn,
+                "ok": False,
+                "error": profile.error,
+                "duration_ms": profile.duration_ms,
+            }
+        )
 
-    def flush(self) -> None:
-        if self.path is None:
-            return
+    def _append(self, record: dict[str, Any]) -> None:
+        assert self.path is not None
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        payload = {
-            "fingerprint": self.fingerprint,
-            "completed": self.completed,
-            "failed": self.failed,
-        }
-        tmp = self.path.with_suffix(self.path.suffix + ".tmp")
-        tmp.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
-        tmp.replace(self.path)
+        new_file = not self.path.exists() or self.path.stat().st_size == 0
+        with self.path.open("a", encoding="utf-8") as fh:
+            if new_file:
+                fh.write(json.dumps({"fingerprint": self.fingerprint}) + "\n")
+            fh.write(json.dumps(record, default=str) + "\n")
+            fh.flush()
 
     def clear(self) -> None:
         self.completed = {}
         self.failed = {}
         if self.path and self.path.exists():
             self.path.unlink()
+
+
+def _parse_checkpoint(text: str, *, source: str) -> tuple[str | None, list[dict[str, Any]]]:
+    """Read the append-only log, transparently accepting the older document format."""
+    legacy = None
+    try:
+        legacy = json.loads(text)
+    except ValueError:
+        legacy = None
+    if isinstance(legacy, dict) and ("completed" in legacy or "failed" in legacy):
+        records: list[dict[str, Any]] = [
+            {"table": table, "ok": True, "profile": profile}
+            for table, profile in (legacy.get("completed") or {}).items()
+        ]
+        records += [
+            {"table": table, "ok": False, **(info or {})}
+            for table, info in (legacy.get("failed") or {}).items()
+        ]
+        return legacy.get("fingerprint"), records
+
+    fingerprint: str | None = None
+    records = []
+    lines = text.splitlines()
+    for index, line in enumerate(lines):
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            record = json.loads(line)
+        except ValueError:
+            # Only the final line can be torn by a crash mid-append.
+            if index == len(lines) - 1:
+                logger.warning("Discarding incomplete final checkpoint record in %s", source)
+                break
+            logger.warning("Skipping malformed checkpoint record %d in %s", index, source)
+            continue
+        if not isinstance(record, dict):
+            continue
+        if "table" not in record and "fingerprint" in record:
+            fingerprint = record["fingerprint"]
+            continue
+        records.append(record)
+    return fingerprint, records
 
 
 def table_from_dict(raw: dict[str, Any]) -> TableProfile:

@@ -32,6 +32,7 @@ SCENARIOS: list[tuple[str, dict]] = [
     ("sample 1k, distinct=table", {"sample_size": 1000, "distinct_scope": "table"}),
     ("sample 1k + histograms", {"sample_size": 1000, "stats_depth": "full"}),
     ("no catalog prefetch", {"sample_size": 1000, "prefetch_catalog": False}),
+    ("with resume checkpointing", {"sample_size": 1000, "resume_state_path": "<tmp>"}),
 ]
 
 
@@ -65,6 +66,11 @@ def main() -> None:
         print(f"{'scenario':<30} {'seconds':>8} {'tables/s':>9}  status")
         print("-" * 62)
         for label, kwargs in SCENARIOS:
+            kwargs = dict(kwargs)
+            if kwargs.get("resume_state_path") == "<tmp>":
+                checkpoint = workdir / "checkpoint.jsonl"
+                checkpoint.unlink(missing_ok=True)
+                kwargs["resume_state_path"] = str(checkpoint)
             config = ProfilerConfig(concurrency=1, **kwargs)
             adapter = create_adapter("duckdb", config, database=str(db))
             started = time.perf_counter()

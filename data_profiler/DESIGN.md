@@ -222,20 +222,35 @@ instead of failing.
 
 ## Resume semantics
 
-Checkpoint file contains:
+The checkpoint is an append-only log: a fingerprint header, then one JSON record
+per table outcome.
 
 ```json
-{ "fingerprint": "...", "completed": {...}, "failed": {...} }
+{"fingerprint": "9f1c…"}
+{"table": "DB.PUBLIC.ORDERS", "ok": true, "profile": {…}}
+{"table": "DB.PUBLIC.EVENTS", "ok": false, "error": "…", "duration_ms": 812.4}
 ```
 
-- **Successes** are skipped on resume.
+- **Successes** are skipped on resume; the profile is replayed from the log.
 - **Failures are recorded but not skipped** — otherwise a throttled warehouse
   permanently omits a table.
 - Fingerprint = hash(engine + connection hint + material config). Changing
   `sample_size`, `distinct_scope` or the target database invalidates the
-  checkpoint instead of mixing incompatible profiles.
-- Atomic write via temp file + replace. Checkpoints are written from the thread
-  that collects results, so the file needs no lock of its own.
+  checkpoint instead of mixing incompatible profiles; the stale log is discarded
+  rather than appended to.
+- Replay is last-record-wins, and a crash mid-append can only damage the final
+  line, which is dropped on load. Records are written by the thread that collects
+  results, so the log needs no lock of its own.
+- The older single-document format is still read, so an in-flight checkpoint from
+  a previous version resumes rather than restarting.
+
+**Why a log and not a document.** The first implementation rewrote the entire
+accumulated state after every table, which is quadratic in catalog size — exactly
+the dimension this tool is for. Measured on 200 tables x 20 columns: 286 MB
+written to persist a 1.4 MB profile, and the run took 6.36s against 1.46s with
+checkpointing off, i.e. resume cost 4x the profiling itself. Appending costs one
+record per table: the same run now writes 1.7 MB and takes 1.52s, ~5% over the
+unchecked baseline, and re-running with all 200 tables cached completes in 0.08s.
 
 ## Security & secrets
 
@@ -275,6 +290,7 @@ Delta answers from file statistics.
 | Schema | Emitted JSON validated against the portable schema; minor-version compatibility asserted |
 | Format parity | Parquet output carries the same provenance flags as JSON |
 | Query count | Histograms for N numeric columns must still be one query |
+| Checkpoint | Append-only (one record per table), tolerates a torn final record, reads the legacy format |
 | Demo | `demos/run_demo.py` exercises end-to-end locally; CI runs it |
 | Runtime | Structured events: `run_started`, `catalog_prefetched`, `table_finished`, metrics block |
 
@@ -291,11 +307,12 @@ still needs a demo account; that is the one layer this repo cannot self-host.
 
 | Scenario | Seconds | Tables/s |
 |---|---|---|
-| exact, no sampling | 2.11 | 95 |
-| sample 1k, `distinct_scope=sample` | 0.83 | 240 |
-| sample 1k, `distinct_scope=table` | 2.20 | 91 |
-| sample 1k + histograms (`stats_depth=full`) | 3.91 | 51 |
-| sample 1k, `prefetch_catalog=false` | 3.40 | 59 |
+| exact, no sampling | 2.23 | 90 |
+| sample 1k, `distinct_scope=sample` | 0.97 | 207 |
+| sample 1k, `distinct_scope=table` | 2.33 | 86 |
+| sample 1k + histograms (`stats_depth=full`) | 3.95 | 51 |
+| sample 1k, `prefetch_catalog=false` | 3.33 | 60 |
+| sample 1k + resume checkpointing | 2.29 | 88 |
 
 Reading it: sampling buys ~2.5x when you accept sample-scoped cardinality, and
 the full-table distinct pass spends that saving to make distinct counts true —
@@ -303,8 +320,9 @@ on a warehouse that pass is an HLL aggregate rather than an exact scan, so the
 trade is better there than these local numbers suggest. Histograms remain the
 most expensive option (they add ~1.7s here, down from ~2.9s before the batching
 described above), which is why `max_histogram_columns` still exists. Catalog
-prefetch saves ~35% even locally where round trips are nearly free; against a
-warehouse it removes ~3 network round trips per table.
+prefetch saves ~30% even locally where round trips are nearly free; against a
+warehouse it removes ~3 network round trips per table. Resume checkpointing is
+near-free after moving to an append-only log.
 
 Absolute numbers are DuckDB-on-a-laptop numbers. What transfers to a warehouse is
 the ranking and the query counts per table: 1 query for basic stats, 2 with a

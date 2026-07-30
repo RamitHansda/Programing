@@ -299,6 +299,78 @@ def test_resume_failures_are_retried(sqlite_db: Path, tmp_path: Path):
     assert doc.tables[0].row_count == 4
 
 
+def test_checkpoint_is_append_only(tmp_path: Path):
+    """Rewriting the whole checkpoint per table is quadratic in catalog size."""
+    state = tmp_path / "state.json"
+    resume = ResumeState(state, fingerprint="fp")
+    for i in range(25):
+        resume.mark_success(
+            TableProfile(
+                catalog=None, schema="main", name=f"t{i}", row_count=i, columns=[]
+            )
+        )
+    lines = [line for line in state.read_text().splitlines() if line.strip()]
+    assert len(lines) == 26, "expected a fingerprint header plus one record per table"
+    assert json.loads(lines[0]) == {"fingerprint": "fp"}
+    assert json.loads(lines[-1])["table"] == "main.t24"
+
+    reloaded = ResumeState(state, fingerprint="fp")
+    assert len(reloaded.completed) == 25
+    assert reloaded.get_successful("main.t7").row_count == 7
+
+
+def test_checkpoint_survives_a_torn_final_record(tmp_path: Path):
+    state = tmp_path / "state.json"
+    resume = ResumeState(state, fingerprint="fp")
+    for name in ("a", "b"):
+        resume.mark_success(
+            TableProfile(catalog=None, schema="main", name=name, row_count=1, columns=[])
+        )
+    with state.open("a", encoding="utf-8") as fh:
+        fh.write('{"table": "main.c", "ok": true, "profi')  # crash mid-append
+
+    reloaded = ResumeState(state, fingerprint="fp")
+    assert set(reloaded.completed) == {"main.a", "main.b"}
+
+
+def test_checkpoint_reads_the_legacy_document_format(tmp_path: Path):
+    state = tmp_path / "state.json"
+    state.write_text(
+        json.dumps(
+            {
+                "fingerprint": "fp",
+                "completed": {
+                    "main.items": {
+                        "catalog": None,
+                        "schema": "main",
+                        "name": "items",
+                        "row_count": 4,
+                        "columns": [],
+                    }
+                },
+                "failed": {"main.other": {"error": "timeout", "duration_ms": 1.0}},
+            }
+        )
+    )
+    resume = ResumeState(state, fingerprint="fp")
+    assert resume.get_successful("main.items").row_count == 4
+    assert resume.failed["main.other"]["error"] == "timeout"
+
+
+def test_checkpoint_with_a_stale_fingerprint_starts_fresh(tmp_path: Path):
+    state = tmp_path / "state.json"
+    ResumeState(state, fingerprint="old").mark_success(
+        TableProfile(catalog=None, schema="main", name="t", row_count=1, columns=[])
+    )
+    fresh = ResumeState(state, fingerprint="new")
+    assert fresh.completed == {}
+    fresh.mark_success(
+        TableProfile(catalog=None, schema="main", name="t", row_count=2, columns=[])
+    )
+    # The incompatible history must not be replayed on the next load either.
+    assert ResumeState(state, fingerprint="new").get_successful("main.t").row_count == 2
+
+
 def test_table_filters(sqlite_db: Path):
     conn = sqlite3.connect(sqlite_db)
     conn.execute("CREATE TABLE other (id INTEGER)")
