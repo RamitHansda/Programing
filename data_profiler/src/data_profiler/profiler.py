@@ -26,7 +26,7 @@ from data_profiler.persistence import ResumeState, write_profile
 
 logger = get_logger(__name__)
 
-SCHEMA_VERSION = "1.0.0"
+SCHEMA_VERSION = "1.1.0"
 
 
 @dataclass

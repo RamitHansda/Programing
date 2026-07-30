@@ -45,16 +45,25 @@ def bundled_schema_path() -> Path:
     return Path(__file__).resolve().parent / "schema" / "profile_schema.json"
 
 
+SUPPORTED_SCHEMA_MAJOR = 1
+
+
 def validate_against_schema(payload: dict[str, Any], schema_path: str | Path | None = None) -> None:
     """Validate a profile document against the bundled JSON Schema when available.
 
     Uses ``jsonschema`` if installed; otherwise performs a lightweight structural check.
+
+    Version policy: additive fields bump the minor version, and any document
+    sharing our major version is accepted. Pinning the exact string would make
+    every new optional statistic a breaking change for readers.
     """
     required_top = {"schema_version", "run", "tables"}
     missing = required_top - set(payload)
     if missing:
         raise ValueError(f"Profile missing keys: {sorted(missing)}")
-    if payload.get("schema_version") != "1.0.0":
+    version = str(payload.get("schema_version", ""))
+    major = version.split(".", 1)[0]
+    if major != str(SUPPORTED_SCHEMA_MAJOR):
         raise ValueError(f"Unsupported schema_version: {payload.get('schema_version')}")
     if not isinstance(payload.get("tables"), list):
         raise ValueError("tables must be a list")
@@ -93,6 +102,9 @@ def _write_parquet(payload: dict[str, Any], path: Path) -> None:
                     "engine": run.get("engine"),
                     "table_fqn": table.get("fully_qualified_name"),
                     "table_row_count": table.get("row_count"),
+                    "table_row_count_is_estimate": table.get("row_count_is_estimate"),
+                    "table_sampled": table.get("sampled"),
+                    "table_sample_size": table.get("sample_size"),
                     "table_error": table.get("error"),
                     "column_name": col.get("name"),
                     "type_kind": (col.get("type") or {}).get("kind"),
@@ -101,10 +113,16 @@ def _write_parquet(payload: dict[str, Any], path: Path) -> None:
                     "comment": col.get("comment"),
                     "min": _stringify(stats.get("min")),
                     "max": _stringify(stats.get("max")),
+                    # Provenance travels with the numbers in every format: a
+                    # Parquet consumer must not silently lose the distinction
+                    # between a measurement and a lower bound.
+                    "min_max_from_sample": stats.get("min_max_from_sample"),
                     "null_count": stats.get("null_count"),
                     "null_ratio": stats.get("null_ratio"),
                     "distinct_count": stats.get("distinct_count"),
                     "distinct_count_is_estimate": stats.get("distinct_count_is_estimate"),
+                    "distinct_from_sample": stats.get("distinct_from_sample"),
+                    "sampled_rows": stats.get("sampled_rows"),
                 }
             )
     table = pa.Table.from_pylist(rows)

@@ -112,6 +112,14 @@ JSON Schema: `src/data_profiler/schema/profile_schema.json` (draft 2020-12),
 shipped as package data so validation also works from an installed wheel. Tests
 validate emitted documents structurally and via `jsonschema`.
 
+**Versioning.** `schema_version` is semver and the major is the compatibility
+contract: additive fields bump the minor (adding the sample-provenance flags took
+1.0.0 to 1.1.0), and readers accept any `1.x` document. Validating against an
+exact string would turn every new optional statistic into a breaking change.
+Every output format carries the same fields — the Parquet flatten includes the
+provenance flags, because a consumer that cannot see `min_max_from_sample` will
+read a sampled lower bound as a measured range.
+
 ## Statistics & cost model
 
 Per table:
@@ -122,7 +130,29 @@ Per table:
    (`INFORMATION_SCHEMA.TABLES.ROW_COUNT`) when `estimate_row_counts` is set.
 3. **One aggregated SELECT** for nulls / min / max (+ distinct) across columns.
 4. Optionally one full-table distinct pass (see below).
-5. Optional histograms (`stats_depth: full`), capped by `max_histogram_columns`.
+5. Optional histograms (`stats_depth: full`) — **one** additional query covering
+   every numeric column, capped by `max_histogram_columns`.
+
+So a table costs at most three queries regardless of how many columns it has.
+
+### Histograms reuse bounds instead of rediscovering them
+
+Step 3 already produced each column's min and max, so bucketing needs no
+bounds-discovery CTE and no `FLOOR`/clamp arithmetic in SQL: the edges are
+computed in Python and applied as conditional aggregates, so all numeric columns
+are bucketed in a single scan rather than one scan per column. On a 10-numeric-
+column table that is 1 query instead of 10, which matters most on a warehouse
+where each one is a round trip plus queue time.
+
+Two details worth knowing:
+
+- Bucket edges are half-open, and the outer buckets are open-ended. Under
+  sampling the histogram query draws its own sample, which can contain a value
+  outside the bounds the first pass measured; with closed edges that row would
+  land in no bucket and the counts would quietly not add up.
+- Bounds are inlined as literals, so only values that arrive as real numbers
+  (`int`, `float`, `Decimal`) are eligible; anything else skips the histogram
+  rather than being interpolated into SQL.
 
 ### Sampling
 
@@ -242,7 +272,9 @@ Delta answers from file statistics.
 | Concurrency | A fake concurrent adapter must actually overlap, and a non-concurrent one must not |
 | Dialect | Generated stats/histogram SQL parsed with `sqlglot` per engine dialect |
 | Contract | Fake cursors for Snowflake/Databricks catalog SQL and prefetch caching |
-| Schema | Emitted JSON validated against the portable schema |
+| Schema | Emitted JSON validated against the portable schema; minor-version compatibility asserted |
+| Format parity | Parquet output carries the same provenance flags as JSON |
+| Query count | Histograms for N numeric columns must still be one query |
 | Demo | `demos/run_demo.py` exercises end-to-end locally; CI runs it |
 | Runtime | Structured events: `run_started`, `catalog_prefetched`, `table_finished`, metrics block |
 
@@ -259,20 +291,25 @@ still needs a demo account; that is the one layer this repo cannot self-host.
 
 | Scenario | Seconds | Tables/s |
 |---|---|---|
-| exact, no sampling | 2.07 | 96 |
-| sample 1k, `distinct_scope=sample` | 0.83 | 241 |
-| sample 1k, `distinct_scope=table` | 2.18 | 92 |
-| sample 1k + histograms (`stats_depth=full`) | 5.12 | 39 |
-| sample 1k, `prefetch_catalog=false` | 3.27 | 61 |
+| exact, no sampling | 2.11 | 95 |
+| sample 1k, `distinct_scope=sample` | 0.83 | 240 |
+| sample 1k, `distinct_scope=table` | 2.20 | 91 |
+| sample 1k + histograms (`stats_depth=full`) | 3.91 | 51 |
+| sample 1k, `prefetch_catalog=false` | 3.40 | 59 |
 
 Reading it: sampling buys ~2.5x when you accept sample-scoped cardinality, and
 the full-table distinct pass spends that saving to make distinct counts true —
 on a warehouse that pass is an HLL aggregate rather than an exact scan, so the
-trade is better there than these local numbers suggest. Histograms are the most
-expensive option by a wide margin (one extra query per numeric column), which is
-why `max_histogram_columns` exists. Catalog prefetch saves ~30% even locally
-where round trips are nearly free; against a warehouse it removes ~3 network
-round trips per table.
+trade is better there than these local numbers suggest. Histograms remain the
+most expensive option (they add ~1.7s here, down from ~2.9s before the batching
+described above), which is why `max_histogram_columns` still exists. Catalog
+prefetch saves ~35% even locally where round trips are nearly free; against a
+warehouse it removes ~3 network round trips per table.
+
+Absolute numbers are DuckDB-on-a-laptop numbers. What transfers to a warehouse is
+the ranking and the query counts per table: 1 query for basic stats, 2 with a
+full-table distinct pass, 3 with histograms — plus 2 catalog queries for the
+entire run.
 
 ## Non-goals (intentionally deferred)
 
