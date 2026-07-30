@@ -10,7 +10,13 @@ class ProfilerError(Exception):
 class AdapterError(ProfilerError):
     """Engine/adapter failure while talking to a database."""
 
-    def __init__(self, message: str, *, transient: bool = False, cause: BaseException | None = None):
+    def __init__(
+        self,
+        message: str,
+        *,
+        transient: bool = False,
+        cause: BaseException | None = None,
+    ):
         super().__init__(message)
         self.transient = transient
         self.__cause__ = cause
