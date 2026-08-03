@@ -12,6 +12,7 @@
 4. [API Surface](#4-api-surface)
 5. [Matching Pipeline (the core)](#5-matching-pipeline-the-core)
 6. [Algorithms — What to Use When](#6-algorithms--what-to-use-when)
+6b. [Which AI Model to Use (and when)](#6b-which-ai-model-to-use-and-when)
 7. [Indexing & Candidate Generation](#7-indexing--candidate-generation)
 8. [Scoring, Thresholds & Decision Policy](#8-scoring-thresholds--decision-policy)
 9. [Data Model](#9-data-model)
@@ -247,6 +248,79 @@ Weights live in a **matching profile** (`kyc_strict`, `payee_lenient`, …), ver
 - Pure Soundex as sole key — too coarse (English-biased, high collisions).
 - Raw Levenshtein on full strings for long org names — quadratic and order-sensitive; use token-level.
 - Embedding-only matching — great for aliases, weak for exact legal identity; use as *recall* aid, not sole scorer for compliance.
+
+---
+
+## 6b. Which AI Model to Use (and when)
+
+**Short answer:** for “are these two names the same person/org?”, **do not use a general LLM as the primary matcher**. Use classical signals first; add a **small fine-tuned pairwise classifier** or **multilingual embedding** only where classical methods miss (aliases, transliteration). Keep GPT/Claude for review assist, not the decision.
+
+### Decision matrix
+
+| Job | Recommended model / approach | Latency | Use as |
+|---|---|---|---|
+| Primary same/not-same score | **No neural net** — Jaro-Winkler + token + Double Metaphone + nickname dict | µs–ms | Decision + explain |
+| Pairwise “same entity?” when you have labels | **Fine-tuned MiniLM / DeBERTa-v3-small cross-encoder** (binary MATCH/NON_MATCH) | ~5–20ms / pair on CPU/GPU | Rerank top candidates or replace composite weights |
+| Alias / transliteration recall | **`BAAI/bge-m3`** or **`intfloat/multilingual-e5-base`** bi-encoder + ANN | ~10ms embed + ANN | Candidate generation only |
+| English-only, cheapest embed | **`sentence-transformers/all-MiniLM-L6-v2`** (384-d) | very cheap | Alias recall if corpus is Latin |
+| Nickname / soft alias without training | Dictionary (`Bill`↔`William`) — not a model | free | Feature boost |
+| Hard REVIEW-queue assist | LLM (**Claude / GPT-4-class**) with structured output | 500ms–2s | Suggestion to human only |
+| Production KYC auto-decision | **Never LLM alone** | — | Fail compliance / audit |
+
+### Why not “just use GPT/Claude”?
+
+| Requirement | Classical / small ML | LLM |
+|---|---|---|
+| Deterministic replay for audit | Yes (same inputs → same score) | No (unless temp=0 + pinned prompt/model — still fragile) |
+| P99 ≤ 80ms at 1K QPS | Yes | No (cost + latency) |
+| Explainability (“phonetic matched”) | Explicit signals | Opaque prose |
+| Calibrated thresholds per use case | Natural | Awkward |
+| Cross-script aliases | Needs packs / embeds | Often good — use only as *assist* |
+
+### Recommended stack (practical)
+
+```
+Layer 1 (always):  normalize + JW + tokens + phonetic + nickname dict
+                   → enough for ~80–90% of clear MATCH / NO_MATCH
+
+Layer 2 (optional): fine-tuned cross-encoder on labeled pairs
+                   Model: cross-encoder style MiniLM or DeBERTa-v3-small
+                   Train on: (name_a, name_b, label) from your locale + feedback
+                   Apply to: top-50 classical candidates only
+
+Layer 3 (optional): bge-m3 / multilingual-e5 bi-encoder for ANN recall
+                   When: Indic/Arabic/CJK romanization gaps, org trade names
+                   Never: sole AUTO_MATCH signal for sanctions
+
+Layer 4 (human path): LLM explains REVIEW cases to ops
+                   Output: {likely_match: bool, rationale, confidence}
+                   Human still clicks MATCH / NON_MATCH
+```
+
+### If you fine-tune one model, fine-tune this
+
+**Cross-encoder binary classifier** on your labeled pairs beats a generic LLM for same/not-same:
+
+- Base: `microsoft/deberta-v3-small` or `sentence-transformers` cross-encoder MiniLM
+- Input: `[CLS] name_a [SEP] name_b`
+- Label: MATCH / NON_MATCH (optionally soft labels from reviewer confidence)
+- Serve: ONNX / TorchScript next to Match Service; score only candidates from blocking
+- Version: `name-xenc@v4` stamped on every audit row like a matching profile
+
+Bi-encoders (`bge-m3`, `e5`) are for **retrieval** (find candidates). Cross-encoders are for **comparison** (are these two the same). Do not confuse the two.
+
+### Models to avoid as the main matcher
+
+| Choice | Problem |
+|---|---|
+| GPT-4 / Claude as online scorer | Cost, latency, non-determinism, weak audit story |
+| Giant general embedding only (no classical) | Misses exact legal-name typos regulators care about; hard to explain |
+| Soundex-only “AI” | Not AI; too coarse |
+| Face/voice models | Different modality — optional fusion later, not name matching |
+
+### One-liner for interviews / design docs
+
+> “Same/not-same is a **calibrated pairwise decision**. Classical features decide most cases; a **fine-tuned MiniLM/DeBERTa cross-encoder** reranks ambiguous pairs; **bge-m3** only expands recall; **LLMs never auto-decide** identity.”
 
 ---
 
