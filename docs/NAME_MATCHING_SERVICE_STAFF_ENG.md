@@ -14,6 +14,7 @@
 6. [Algorithms — What to Use When](#6-algorithms--what-to-use-when)
 6b. [Which AI Model to Use (and when)](#6b-which-ai-model-to-use-and-when)
 6c. [Train Your Own Model (what to own)](#6c-train-your-own-model-what-to-own)
+6d. [Your Product Shape: Pairwise Match + Confidence](#6d-your-product-shape-pairwise-match--confidence)
 7. [Indexing & Candidate Generation](#7-indexing--candidate-generation)
 8. [Scoring, Thresholds & Decision Policy](#8-scoring-thresholds--decision-policy)
 9. [Data Model](#9-data-model)
@@ -421,6 +422,104 @@ Classical features can remain as **features concatenated** or as a **fallback** 
 ### Staff one-liner
 
 > “We own **`name-xenc`**: a fine-tuned **DeBERTa-v3-small cross-encoder** on our labeled name pairs, calibrated, ONNX-served, versioned. Optional **bge-m3 bi-encoder** later for recall. We do not train an LLM for identity.”
+
+---
+
+## 6d. Your Product Shape: Pairwise Match + Confidence
+
+This is the core contract you described.
+
+### Request
+
+```json
+{
+  "name_a": "Jon Smith",
+  "name_b": "John Smith",
+  "entity_type": "INDIVIDUAL"   // or "ORG"
+}
+```
+
+### Response
+
+```json
+{
+  "match": true,
+  "confidence": 0.93,
+  "decision": "AUTO_MATCH",
+  "entity_type": "INDIVIDUAL",
+  "model_id": "name-xenc@v1",
+  "signals": [
+    { "name": "model_prob", "value": 0.91 },
+    { "name": "jaro_winkler", "value": 0.97 },
+    { "name": "phonetic", "value": 1.0 }
+  ]
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `confidence` | Calibrated P(same entity) in **[0, 1]** — same scale for INDIVIDUAL and ORG |
+| `match` | Convenience boolean: `confidence >= threshold(entity_type, profile)` |
+| `decision` | `AUTO_MATCH` / `REVIEW` / `NO_MATCH` from thresholds (keep even if UI only shows score) |
+
+### End-to-end for this API (no corpus search required)
+
+```text
+name_a, name_b, entity_type
+        │
+        ▼
+  normalize (type-specific: honorifics vs Inc/Ltd)
+        │
+        ▼
+  classical features (JW, tokens, phonetic, nickname/legal-form)
+        │
+        ▼
+  name-xenc@v1 cross-encoder
+  input: [CLS] name_a [SEP] name_b
+  (+ optional type token: [CLS] INDIVIDUAL [SEP] name_a [SEP] name_b)
+        │
+        ▼
+  confidence = calibrated P(MATCH)
+  decision   = apply thresholds for INDIVIDUAL vs ORG profiles
+```
+
+**No blocking index needed** for pure pairwise — both strings are already provided. Blocking/ES only matter when screening one name against a database.
+
+### Model input trick for org vs individual
+
+Train **one** model with type in the text (preferred) or **two** heads/profiles:
+
+```text
+[CLS] INDIVIDUAL [SEP] jon smith [SEP] john smith
+[CLS] ORG [SEP] acme inc [SEP] acme incorporated
+```
+
+Same checkpoint `name-xenc`; type-conditioned behavior without maintaining two full models. Thresholds still differ:
+
+| entity_type | AUTO_MATCH if confidence ≥ | REVIEW band |
+|---|---|---|
+| INDIVIDUAL | 0.94 (example) | 0.75–0.94 |
+| ORG | 0.92 (example) | 0.70–0.92 |
+
+Tune on your labeled set — numbers above are starting points.
+
+### Minimal training rows for this API
+
+```text
+name_a, name_b, entity_type, label
+"Jon Smith", "John Smith", INDIVIDUAL, MATCH
+"J Smith", "John Smith", INDIVIDUAL, MATCH
+"John Smith", "John Smyth", INDIVIDUAL, NON_MATCH
+"Acme Inc", "Acme Incorporated", ORG, MATCH
+"Acme Inc", "Acme LLC", ORG, NON_MATCH   # if different legal entities in your policy
+```
+
+### What you ship
+
+1. Owned model: **DeBERTa-v3-small cross-encoder** → `confidence`
+2. API: `POST /v1/match:compare` with `{name_a, name_b, entity_type}`
+3. Classical features as backup / explanation signals
+4. Separate threshold profiles for `INDIVIDUAL` vs `ORG`
 
 ---
 
