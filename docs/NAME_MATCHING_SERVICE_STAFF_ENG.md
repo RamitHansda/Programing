@@ -13,6 +13,7 @@
 5. [Matching Pipeline (the core)](#5-matching-pipeline-the-core)
 6. [Algorithms — What to Use When](#6-algorithms--what-to-use-when)
 6b. [Which AI Model to Use (and when)](#6b-which-ai-model-to-use-and-when)
+6c. [Train Your Own Model (what to own)](#6c-train-your-own-model-what-to-own)
 7. [Indexing & Candidate Generation](#7-indexing--candidate-generation)
 8. [Scoring, Thresholds & Decision Policy](#8-scoring-thresholds--decision-policy)
 9. [Data Model](#9-data-model)
@@ -321,6 +322,105 @@ Bi-encoders (`bge-m3`, `e5`) are for **retrieval** (find candidates). Cross-enco
 ### One-liner for interviews / design docs
 
 > “Same/not-same is a **calibrated pairwise decision**. Classical features decide most cases; a **fine-tuned MiniLM/DeBERTa cross-encoder** reranks ambiguous pairs; **bge-m3** only expands recall; **LLMs never auto-decide** identity.”
+
+---
+
+## 6c. Train Your Own Model (what to own)
+
+If the requirement is **“we must own and train our model”**, train **one primary model**: a **pairwise cross-encoder** that outputs P(same entity). Optionally train a second **bi-encoder** later for recall. Do **not** train an LLM from scratch for this.
+
+### Own this (primary)
+
+| | Recommendation |
+|---|---|
+| **Architecture** | **Cross-encoder** (both names in one forward pass) |
+| **Base checkpoint** | **`microsoft/deberta-v3-base`** if you have GPU serving and ≥50K labeled pairs; **`microsoft/deberta-v3-small`** or **`sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2`** adapted as cross-encoder if you need CPU / multilingual cheap |
+| **Default pick for most teams** | **`microsoft/deberta-v3-small`** fine-tuned as binary classifier — best size/quality/latency balance to *own* |
+| **Multilingual / Indic-heavy corpus** | Start from **`microsoft/mdeberta-v3-base`** (or MiniLM multilingual) instead of English-only DeBERTa |
+| **Head** | Linear → 2 logits (`MATCH`, `NON_MATCH`) or 1 logit + sigmoid; use **temperature-scaled probability** as score |
+| **Input** | `[CLS] {normalized_name_a} [SEP] {normalized_name_b}` (optionally append `\| dob=... \| country=...` as side features in text) |
+| **Output you own** | Versioned artifact `name-xenc@{semver}` + calibration file + eval report |
+
+**Why cross-encoder, not bi-encoder, as the owned “same or not” model:**  
+Same/not-same is a **comparison**. Cross-encoders attend across both strings and beat embedding cosine for pairwise identity. Bi-encoders cannot see interactions like token reorder + typo in one shot as well.
+
+### Own later (optional second model)
+
+| | Recommendation |
+|---|---|
+| **Architecture** | **Bi-encoder** (embed once per name, ANN search) |
+| **Base** | **`BAAI/bge-m3`** or **`intfloat/multilingual-e5-base`**, contrastive fine-tune on hard negatives from your blockers |
+| **Role** | Candidate recall only — never the sole AUTO_MATCH decision |
+| **When** | Classical blocking misses transliterations / org aliases at scale |
+
+### Do not train / own for v1
+
+| Skip | Why |
+|---|---|
+| Train LLM (7B+) for match | Overkill, slow, hard to calibrate; fine-tune small encoder instead |
+| Train from random init | You need tens of millions of pairs; start from pretrained |
+| Siamese with frozen BERT + tiny MLP only | Weaker than full cross-encoder fine-tune |
+| One embedding model as both retrieve + decide | Compromises both jobs |
+
+### Training data you must build
+
+```text
+name_a, name_b, label, locale, entity_type, source
+"Jon Smith", "John Smith", MATCH, en, PERSON, typo_synth
+"William Gates", "Bill Gates", MATCH, en, PERSON, nickname
+"Raj Patel", "Rajesh Patel", MATCH, en-IN, PERSON, review_feedback
+"Acme Inc", "Acme Incorporated", MATCH, en, ORG, legal_form
+"John Smith", "John Smyth", NON_MATCH, en, PERSON, hard_negative  # different DOB in attrs
+```
+
+**Targets:**
+
+- ≥ **20K–50K** labeled pairs to beat classical alone; **100K+** to stabilize multilingual
+- **Hard negatives** from same blocking key (same phonetic, different person) — critical
+- Balance MATCH / NON_MATCH ≈ 1:2 to 1:5 (real traffic is match-rare); use class weights or focal loss
+- Hold out **by locale and by time** (no leakage from future feedback)
+- Synthetic: controlled typos, initialisms, legal-form variants — then mix with real reviewer labels
+
+### Training recipe (concrete)
+
+```text
+1. Normalize both sides with YOUR production normalizer (same code path).
+2. Fine-tune DeBERTa-v3-small, 2–4 epochs, lr ~1e-5..3e-5, batch 32–64.
+3. Max length 64–128 tokens (names are short — don’t waste 512).
+4. Loss: cross-entropy (+ optional pairwise margin on hard negatives).
+5. After train: fit temperature scaling / Platt scaling on validation → calibrated P(match).
+6. Export ONNX (or TorchScript); pin checksum in Match Service config.
+7. Gate promote on: PR-AUC, recall@AUTO threshold, FP rate on sanctions slice.
+```
+
+**Libraries:** Hugging Face `transformers` + `datasets`; export with Optimum/ONNX Runtime. Optional: `sentence-transformers` `CrossEncoder` trainer if you prefer that API.
+
+### How it sits in the service you own
+
+```text
+blocking (classical) → ≤50 candidates
+        → name-xenc@v1  →  P(match)
+        → thresholds from matching profile
+        → AUTO_MATCH | REVIEW | NO_MATCH
+```
+
+Classical features can remain as **features concatenated** or as a **fallback** when model confidence is in the middle band — many teams keep a blended score:
+
+`final = α * P_model + (1-α) * classical_score` with α tuned on validation (start α=0.7).
+
+### Serving the model you own
+
+| Concern | Practice |
+|---|---|
+| Runtime | ONNX Runtime in Match Service sidecar or in-process |
+| Hardware | CPU enough for small/DeBERTa-small at ≤50 pairs/query; GPU if QPS high |
+| Versioning | `model_id` + checksum on every `match_audit` row |
+| Rollback | Keep previous ONNX on disk; flip profile pointer |
+| Drift | Weekly eval on new feedback; retrain when PR-AUC drops or locale mix shifts |
+
+### Staff one-liner
+
+> “We own **`name-xenc`**: a fine-tuned **DeBERTa-v3-small cross-encoder** on our labeled name pairs, calibrated, ONNX-served, versioned. Optional **bge-m3 bi-encoder** later for recall. We do not train an LLM for identity.”
 
 ---
 
