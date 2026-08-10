@@ -43,13 +43,10 @@ Helper for code:
 
 
         while(num>0){
+            num--;
             int rem=num%26;
-            if(rem>0){
-                str.append(mapOfChar.get(rem-1));
-            } else{
-                str.append(mapOfChar.get(25));
-            }
-           num =(num-1)/26 ;
+            str.append((char)(rem + 'A'));
+            num= num/26;
         }
         return str.reverse().toString();
 

@@ -33,11 +33,11 @@ public class FilePouplation {
         int row = matrix.length;
         int col = matrix[0].length;
         boolean[][] visited= new boolean[row][col];
-        Queue<Pair> queue = new LinkedList<>();
+        Queue<int []> queue = new LinkedList<>();
         for(int i =0;i<row;i++){
             for(int j=0;j<col;j++){
                 if(matrix[i][j]==1){
-                    queue.offer(new Pair(i, j));
+                    queue.offer(new int []{i, j});
                     visited[i][j]=true;
                 }
             }
@@ -49,13 +49,13 @@ public class FilePouplation {
             int size = queue.size();
             steps++;
             for (int i=0;i<size;i++){
-                Pair element = queue.poll();
-                int rowIndex = element.i;
-                int colIndex  = element.j;
+                int[] element = queue.poll();
+                int rowIndex = element[0];
+                int colIndex  = element[1];
 
                 for (int [] dir : dirs){
                     if(rowIndex+dir[0]>=0 && rowIndex+dir[0]<row && colIndex+dir[1]>=0 && colIndex+dir[1]<col && !visited[rowIndex+dir[0]][colIndex+dir[1]]){
-                        queue.offer(new Pair(rowIndex+dir[0], colIndex+dir[1]));
+                        queue.offer(new int[] {rowIndex+dir[0], colIndex+dir[1]});
                         visited[rowIndex+dir[0]][colIndex+dir[1]]= true;
                     }
                 }
