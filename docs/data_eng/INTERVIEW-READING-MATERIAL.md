@@ -9,6 +9,8 @@ Estimated total time: **6–8 hours**.
 
 This is the highest-signal area. Every question about performance, debugging, and pipeline design at Epsilon will trace back to these concepts.
 
+**Full staff-engineer answer bank:** `docs/data_eng/SPARK_ARCHITECTURE_STAFF_ENG.md` (architecture, shuffle/skew, memory, AQE, streaming, spoken answers, textbook-vs-production signals).
+
 ---
 
 ### 1.1 How Spark Executes a Job (Read First)
