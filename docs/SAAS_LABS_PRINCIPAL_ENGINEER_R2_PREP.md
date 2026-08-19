@@ -289,13 +289,13 @@ Be concrete: sharding strategy, replication, memory locality, batching, avoiding
 
 ## 10. Linked internal deep refs (if you want more drill)
 
-- `docs/skydo-tech/AGENTIC-SUPPORT-COPILOT.md`
+- `docs/ai/AGENTIC-SUPPORT-COPILOT.md`
 - `docs/skydo-tech/dlock_Architecture.md`
 - `docs/skydo-tech/Katar_Architure.md`
-- `docs/REAL_TIME_VOICE_SALES_AGENT_HLD.md`
-- `docs/AI_CONVERSATION_PLATFORM_PRINCIPAL_DESIGN.md`
+- `docs/ai/REAL_TIME_VOICE_SALES_AGENT_HLD.md`
+- `docs/ai/AI_CONVERSATION_PLATFORM_PRINCIPAL_DESIGN.md`
 - `docs/data_eng/PAYMENT_RECONCILIATION_HLD_STAFF_ENG.md`
-- `docs/AI-AGENTIC-INTERVIEW-PREP.md`
+- `docs/ai/AI-AGENTIC-INTERVIEW-PREP.md`
 
 ---
 
