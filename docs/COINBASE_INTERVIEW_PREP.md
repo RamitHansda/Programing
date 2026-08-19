@@ -93,7 +93,7 @@ Designs should be **scalable, secure, and compliant**, not just technically clev
 - **Cryptocurrency exchange / order book:** Matching engine, persistence, APIs, market data.  
   **Use:** `docs/lld/order-book/HLD.md` for order book and matching; extend to APIs, storage, and scaling.
 - **Transaction history / list APIs:** Large datasets, consistent pagination, auditability.  
-  **Use:** `docs/QUERY_PAGINATION_LARGE_DATASETS_DESIGN.md` for cursor/keyset pagination, consistency, indexing.
+  **Use:** `docs/data_eng/QUERY_PAGINATION_LARGE_DATASETS_DESIGN.md` for cursor/keyset pagination, consistency, indexing.
 - **Blockchain indexing / multi-chain:** Ingest, index, query by address/tx; fault isolation per chain.
 - **Custody / key management:** Secure storage, access control, audit logs, HSM/signing flow.
 
@@ -151,7 +151,7 @@ Use **STAR:** Situation → Task → Action → Result (and what you’d do diff
 
 ### Day before
 
-- [ ] Re-read `docs/lld/order-book/HLD.md` and `docs/QUERY_PAGINATION_LARGE_DATASETS_DESIGN.md` (at least summaries).
+- [ ] Re-read `docs/lld/order-book/HLD.md` and `docs/data_eng/QUERY_PAGINATION_LARGE_DATASETS_DESIGN.md` (at least summaries).
 - [ ] Review complexity of your main data structures (arrays, trees, graphs, heaps).
 - [ ] Sleep well; have a quiet, stable setup for remote rounds.
 
@@ -162,7 +162,7 @@ Use **STAR:** Situation → Task → Action → Result (and what you’d do diff
 | Doc | Use in interview |
 |-----|-------------------|
 | `docs/lld/order-book/HLD.md` | Order book, price-time priority, matching engine, architecture. |
-| `docs/QUERY_PAGINATION_LARGE_DATASETS_DESIGN.md` | List APIs, cursor pagination, consistency, scale, auditability. |
+| `docs/data_eng/QUERY_PAGINATION_LARGE_DATASETS_DESIGN.md` | List APIs, cursor pagination, consistency, scale, auditability. |
 | `docs/lld/protocol-adapters/` | Good for “integrate multiple chains or protocols” style design. |
 
 ---

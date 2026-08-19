@@ -229,7 +229,7 @@ Once `status = FINALIZED`, an invoice row and its line items are **never updated
 
 - Each customer has a **billing-entity-local timezone** on their subscription record.
 - The scheduler doesn't fire once — it fires **one `BillingRun` per `(legal_entity, billing_cycle, UTC-offset bucket)`**, at each bucket's local midnight. With ~24-38 practical offset buckets (including half-hour offsets like IST/+5:30), this **naturally spreads the 1M-customer load across the day** instead of concentrating all of it at UTC midnight — a secondary benefit that reduces the peak-concurrency requirement well below the "all 1M at once" worst case assumed in §2's capacity math (that section deliberately sizes for the pessimistic single-wave case to guarantee headroom).
-- Customers who explicitly want calendar-day-of-month invariance across DST transitions get the same "advance to next valid instant / fire at first occurrence" policy as the email scheduler design (`EMAIL_SCHEDULER_DELIVERY_HLD_STAFF_ENG.md` §5.8) — no bespoke logic needed here.
+- Customers who explicitly want calendar-day-of-month invariance across DST transitions get the same "advance to next valid instant / fire at first occurrence" policy as the email scheduler design (`docs/EMAIL_SCHEDULER_DELIVERY_HLD_STAFF_ENG.md` §5.8) — no bespoke logic needed here.
 
 ### 5.11 SLA and backpressure at the top of the funnel
 
