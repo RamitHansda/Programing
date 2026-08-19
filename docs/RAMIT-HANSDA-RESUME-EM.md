@@ -87,6 +87,7 @@ Jadavpur University, Kolkata — 2013
 
 - **Programming & Scripting:** Java, Kotlin, Python, Go, TypeScript, JavaScript
 - **Frameworks & Development:** Spring Boot, REST, GraphQL, Node.js (NestJS)
+- **Frontend:** TypeScript, JavaScript, Next.js, CSS, Tailwind CSS
 - **Distributed Systems & Data:** Apache Spark, Iceberg, Kafka, Data Warehouse Design, BigQuery, Snowflake, Elasticsearch, Redshift
 - **Cloud Platforms:** Google Cloud (BigQuery, App Engine, Cloud Run), AWS (ECS, ECR, SQS, SNS, EventBridge, Lambda, KMS, VPC), Oracle Cloud, Azure (Cosmos DB)
 - **Databases:** PostgreSQL, Redis, MySQL, MongoDB, Cosmos DB, DynamoDB
