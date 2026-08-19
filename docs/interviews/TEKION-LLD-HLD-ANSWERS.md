@@ -1055,4 +1055,4 @@ function SearchBar() {
 
 ---
 
-*Paired with `TEKION-LLD-HLD-QUESTIONS-BANK.md` (source questions + citations) and reuses story material from `EM-AMBIGUITY-QUALITY-INTERVIEW-PREP.md` (idempotency/incident stories) and `AI-ML-EM-STAFF-INTERVIEW-PREP.md` (production monitoring/incident framing) already in this repo.*
+*Paired with `TEKION-LLD-HLD-QUESTIONS-BANK.md` (source questions + citations) and reuses story material from `EM-AMBIGUITY-QUALITY-INTERVIEW-PREP.md` (idempotency/incident stories) and `docs/ai/AI-ML-EM-STAFF-INTERVIEW-PREP.md` (production monitoring/incident framing) already in this repo.*

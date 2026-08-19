@@ -569,4 +569,4 @@ OBS:        Full claim-level traces; SLOs on unsupported rate, P99, delete lag
 
 ---
 
-*Interview-prep HLD for Staff / Principal discussions. Pairs with `docs/SEMANTIC_SEARCH_ENGINE_HLD_STAFF_ENG.md` (retrieval substrate) and extends it with generation + verification for a grounded Q&A product.*
+*Interview-prep HLD for Staff / Principal discussions. Pairs with `docs/ai/SEMANTIC_SEARCH_ENGINE_HLD_STAFF_ENG.md` (retrieval substrate) and extends it with generation + verification for a grounded Q&A product.*
