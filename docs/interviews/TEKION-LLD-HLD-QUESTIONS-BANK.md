@@ -86,7 +86,7 @@ Tekion interviewers frequently fold classic backend/distributed-systems fundamen
 
 - **Kafka**: "Explain how Kafka works and its core components" → immediately followed by **"a producer successfully publishes messages but a consumer isn't receiving them — how do you debug it?"** (consumer group/offset/rebalance/ACL debugging expected)
 - **Kafka delivery semantics**: "How do you implement at-least-once vs. at-most-once delivery?" (asked to someone who listed Kafka on their resume — expect this if Kafka is on yours)
-- **Idempotency in payments**: "If retries happen in a payment system, how do you ensure the same request doesn't deduct balance twice?" (idempotency key bound to business intent, not transport ID — this is a very close cousin to the idempotency work already documented in your `EM-AMBIGUITY-QUALITY-INTERVIEW-PREP.md` payout incident story — reuse that reasoning directly)
+- **Idempotency in payments**: "If retries happen in a payment system, how do you ensure the same request doesn't deduct balance twice?" (idempotency key bound to business intent, not transport ID — this is a very close cousin to the idempotency work already documented in your `docs/em-interview/EM-AMBIGUITY-QUALITY-INTERVIEW-PREP.md` payout incident story — reuse that reasoning directly)
 - **Java concurrency**: threads, synchronization, race conditions, deadlocks — expected to speak from **production debugging experience**, not textbook definitions (lock ordering, timeout-based locking, concurrent collections)
 - **Testing**: Mockito/dependency injection, mocking to isolate dependencies in unit tests
 - **ACID properties**, **SQL vs. NoSQL trade-offs**, **process vs. thread**

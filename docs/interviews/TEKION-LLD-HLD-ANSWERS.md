@@ -908,7 +908,7 @@ Content-Type: application/json-patch+json
 
 ## Idempotency in Payment Retries (near-guaranteed if payments/Kafka is on your resume)
 
-> This is the exact scenario already fully worked out in your `docs/EM-AMBIGUITY-QUALITY-INTERVIEW-PREP.md` duplicate-payout incident — reuse it directly, it's a real, quantified story.
+> This is the exact scenario already fully worked out in your `docs/em-interview/EM-AMBIGUITY-QUALITY-INTERVIEW-PREP.md` duplicate-payout incident — reuse it directly, it's a real, quantified story.
 
 **The answer, structured:**
 1. **Bind the idempotency key to business intent, not transport.** A retry from a client (or an upstream service retrying due to a timeout) generates a *new* HTTP request ID, but represents the *same* business payment intent. The idempotency key must be something the client derives deterministically from the business operation (e.g., `payment_intent_id`, or a client-generated UUID passed explicitly and reused on retry) — never the server-generated request ID.
@@ -1055,4 +1055,4 @@ function SearchBar() {
 
 ---
 
-*Paired with `TEKION-LLD-HLD-QUESTIONS-BANK.md` (source questions + citations) and reuses story material from `EM-AMBIGUITY-QUALITY-INTERVIEW-PREP.md` (idempotency/incident stories) and `docs/ai/AI-ML-EM-STAFF-INTERVIEW-PREP.md` (production monitoring/incident framing) already in this repo.*
+*Paired with `TEKION-LLD-HLD-QUESTIONS-BANK.md` (source questions + citations) and reuses story material from `docs/em-interview/EM-AMBIGUITY-QUALITY-INTERVIEW-PREP.md` (idempotency/incident stories) and `docs/ai/AI-ML-EM-STAFF-INTERVIEW-PREP.md` (production monitoring/incident framing) already in this repo.*
