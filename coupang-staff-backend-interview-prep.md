@@ -177,6 +177,9 @@ Prioritize these:
 11. Design e-commerce product tracking service
 12. Design book shop / online store system
 
+**Related deep dive (payments → analytics correctness):**  
+[`docs/data_eng/PAYMENT_TXN_ANALYTICS_PRINCIPAL_DESIGN.md`](docs/data_eng/PAYMENT_TXN_ANALYTICS_PRINCIPAL_DESIGN.md) — principal-level design for “every transaction must eventually appear correctly in analytics” (outbox, idempotent projection, reconciliation).
+
 ### System Design Answer Framework
 
 Use this structure every time:

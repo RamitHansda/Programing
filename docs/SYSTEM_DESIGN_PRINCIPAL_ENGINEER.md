@@ -95,6 +95,9 @@ Before drawing a single box, name the **design principles** that govern the syst
 3. **Auditability is not optional** — every state change has an immutable record with who/what/when.
 4. **Fail closed on security** — unknown inputs are denied, not defaulted.
 
+Worked example applying these principles to analytics correctness:  
+[`docs/data_eng/PAYMENT_TXN_ANALYTICS_PRINCIPAL_DESIGN.md`](data_eng/PAYMENT_TXN_ANALYTICS_PRINCIPAL_DESIGN.md).
+
 **Content delivery platform:**
 1. **Eventual consistency is acceptable for reads** — slight staleness in feeds is tolerable; user writes must be visible to the user immediately.
 2. **Degrade gracefully** — partial failures return degraded content, not errors.
