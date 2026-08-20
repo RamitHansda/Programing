@@ -1,9 +1,10 @@
 # Distributed Job Scheduler (10k jobs/sec)
 
-Interview-oriented high-level design for a multi-tenant job scheduler that handles immediate, delayed, and cron jobs at **10,000 dispatches/second**.
+Interview-oriented HLDs for distributed job scheduling at **~10k executions/second**.
 
 | Doc | Purpose |
 |-----|---------|
-| [DISTRIBUTED_JOB_SCHEDULER_HLD.md](./DISTRIBUTED_JOB_SCHEDULER_HLD.md) | Full HLD: requirements, estimates, architecture, timers, leases, bottlenecks, cheat sheet |
+| [HELLO_INTERVIEW_JOB_SCHEDULER_HLD.md](./HELLO_INTERVIEW_JOB_SCHEDULER_HLD.md) | **Hello Interview problem breakdown** — Task vs Job, ±2s, 10k/sec, at-least-once, mid/senior/staff bar |
+| [DISTRIBUTED_JOB_SCHEDULER_HLD.md](./DISTRIBUTED_JOB_SCHEDULER_HLD.md) | Broader staff notes: delay buckets, leases, bottlenecks, capacity |
 
-**One-liner:** Metadata is source of truth; sharded hierarchical delay buckets replace DB due-scans; Kafka ready queues + expiring leases give at-least-once execution with exactly-once bookkeeping.
+**Hello Interview one-liner:** API persists Jobs; sharded Redis ZSET finds due work within ~2s; schedulers CAS-claim → Kafka; workers execute with leases (at-least-once + idempotent handlers).
