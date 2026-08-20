@@ -22,6 +22,7 @@
 8. [High-Level Design](#8-high-level-design)
 9. [Potential Deep Dives](#9-potential-deep-dives)
 10. [Final Design](#10-final-design)
+10b. [Stretch: 1M jobs/sec](#10b-stretch-what-changes-at-1m-jobssec)
 11. [What Is Expected at Each Level](#11-what-is-expected-at-each-level)
 12. [Interview Cheat Sheet](#12-interview-cheat-sheet)
 
@@ -437,6 +438,123 @@ PENDING ──(due + claimed)──► READY ──(worker lease)──► RUNNI
 
 - Cancel / reschedule APIs  
 - Multi-step DAG orchestration (that’s Temporal/Airflow territory)
+
+---
+
+## 10b. Stretch: What Changes at **1M jobs/sec**
+
+Interview follow-up: *“OK, now make it 1 million executions per second.”*  
+This is a **100×** jump from 10k/sec. Same boxes on the whiteboard, **different physics**.
+
+### Back-of-envelope at 1M/sec
+
+```
+Executions:              1,000,000 / sec
+                       ≈ 86.4 billion / day
+
+Queue bandwidth (500 B): 1M × 500 B ≈ 500 MB/s raw
+  (compressed ~3×):      ~150–200 MB/s sustained  →  large Kafka / Pulsar cluster
+
+If avg handler = 100 ms: concurrent leases ≈ 100,000
+If avg handler = 1 s:    concurrent leases ≈ 1,000,000
+
+Metadata ops (2–3 / job): 2–3M writes/sec  →  Postgres / single Redis are dead
+History 1 day @ 200 B:    86.4B × 200 B ≈ 17 TB/day  →  sample / tier / drop verbose history
+```
+
+### What breaks in the 10k design
+
+| 10k piece | Why it dies at 1M |
+|-----------|-------------------|
+| Per-job CAS in shared DB | 1M conditional updates/sec + hot partitions |
+| Redis ZSET as *the* due index | Single-threaded commands, cross-slot multi-key pain, network RTT per tick |
+| One Kafka cluster, ~128 partitions | Need **thousands** of partitions / multiple clusters; rebalance storms |
+| Sync status write per completion | 1M updates/sec melts OLTP; must batch / async / sampled |
+| Fat payloads on the bus | 1M × 10 KB = 10 GB/s — impossible; refs only |
+| Central “monitor every execution” UI | Can’t store/query full fidelity; aggregates + sampling |
+
+### Redesign principles (say these first)
+
+1. **Partition by time ∧ hash** — every second is many independent shards; no global due scan.  
+2. **Ownership, not CAS races** — shard lease via etcd/ZK/consistent hash so one owner fires a partition (batch, not row-by-row fights).  
+3. **Local timing wheels** — near-term timers live in memory on the shard owner; durable log is backup, not the hot poll path.  
+4. **Batch everything** — claim N, enqueue N, ack N, status flush N (100–1000).  
+5. **Immediate ≠ scheduled** — `run_now` bypasses the timer plane entirely (API → ready log).  
+6. **History is not on the hot path** — append-only, sampled, or tiered; never block dispatch on UI writes.
+
+### Target architecture at 1M/sec
+
+```
+                    ┌─ region / cell 0 ─┐   ┌─ cell 1 ─┐   …
+ Clients ──API──►   │ shard map (hash)  │   │          │
+                    └────────┬──────────┘   └────┬─────┘
+                             │                   │
+              ┌──────────────▼───────────────────▼──────────────┐
+              │  Scheduler shard S (owns key range + time slice) │
+              │  • durable shard log (Kafka partition / BookKeeper)│
+              │  • in-memory hierarchical timing wheel (next 1–5m) │
+              │  • batch dispatch to ready partitions             │
+              └──────────────┬────────────────────────────────────┘
+                             │ batch produce
+              ┌──────────────▼────────────────────────────────────┐
+              │  Ready bus: multi-cluster Kafka / Pulsar          │
+              │  thousands of partitions, priority isolated       │
+              └──────────────┬────────────────────────────────────┘
+                             │
+              ┌──────────────▼────────────────────────────────────┐
+              │  Worker fleets (per cell / priority)              │
+              │  local lease map; batched result stream           │
+              └──────────────┬────────────────────────────────────┘
+                             ▼
+              Results log → rollups / sampled execution store
+```
+
+### Component changes vs 10k
+
+| Concern | @ 10k/sec | @ 1M/sec |
+|---------|-----------|----------|
+| Due discovery | Redis ZSET poll | **Per-shard timing wheel** + promote from durable log |
+| Coordination | Optimistic CAS per job | **Sticky shard ownership** (lease) + batch fire |
+| Metadata | Dynamo/Cassandra OK | Same family but **cell-local**; no cross-cell sync on hot path |
+| Ready queue | 1 Kafka cluster, 64–128 parts | **Multi-cluster / Pulsar**, 2k–10k partitions |
+| Status | Sync update Execution row | **Async result stream**; retain full detail for errors/sample only |
+| Cron | Scanner advances `next_run_at` | **Pre-materialize** next window into shard wheels; heavy jitter / cell split for midnight |
+| Monitoring | Per-execution GET | **Metrics + traces + sampled runs**; lookup by id via log/index sparse store |
+| Deployment | One region OK | **Cells / regions**; hard tenant → cell mapping for noisy neighbors |
+
+### Can you still hit ~2s precision?
+
+Yes, **per shard**, if:
+
+- Wheel tick ≤ 100–250ms  
+- Dispatch is local batch produce (no cross-region hop on fire)  
+- Ready-consumer lag HPA keeps queue delay &lt; ~1s  
+- NTP / bounded clock skew inside a cell  
+
+Harder globally: cross-region “fire everywhere at T” needs **cell-local clocks** and accepting ±2s *per cell*, not one global atomic second.
+
+### At-least-once at 1M/sec
+
+Same contract, cheaper mechanisms:
+
+- Dedup window in workers: LRU / Bloom of recent `execution_id` (seconds–minutes)  
+- Idempotent handlers still mandatory  
+- Don’t try distributed transactions between wheel and queue — **append fire record to shard log, then enqueue**; recovery replays unacked fires  
+
+### Cost / product reality check (Staff+)
+
+At 1M/sec you must ask the interviewer:
+
+- Are these **tiny** jobs (metrics fanout, cache invalidate) or **heavy** (email, HTTP)?  
+- Do we need **per-job status**, or is **aggregate success rate** enough?  
+- Is “scheduler” the right product, or is this a **stream processor** (Flink) / **edge local scheduler**?
+
+If jobs are heavy HTTP calls, **1M/sec egress** dominates cost and you scale **workers + downstream**, not just timers.  
+If jobs are lightweight internal events, push scheduling into the **log consumer** and skip a separate “job platform” tax.
+
+### 30-second answer for the 1M follow-up
+
+> “At 1M/sec I stop doing per-job CAS against a shared index. I cell-shard by hash, give each shard an owned timing wheel backed by a durable partition log, batch-dispatch into a multi-cluster ready bus, and move execution status to an async/sampled path. Immediate jobs bypass the wheel. Precision stays ~2s inside a cell; cross-cell global atomicity is dropped. At-least-once via fire-log replay + worker idempotency.”
 
 ---
 
