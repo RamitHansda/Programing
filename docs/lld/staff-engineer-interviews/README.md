@@ -38,6 +38,7 @@ This folder is **interview-ready**: every problem guide opens with a **timeboxed
 | 12 | Meeting scheduler | Strategy, domain services, value objects | [12-meeting-scheduler.md](./12-meeting-scheduler.md) |
 | 13 | Shopping cart / checkout | Builder, Strategy, Saga (conceptual) | [13-shopping-cart-checkout.md](./13-shopping-cart-checkout.md) |
 | 14 | Pub-sub message hub | Observer, Mediator, Strategy | [14-pub-sub-message-hub.md](./14-pub-sub-message-hub.md) |
+| 15 | Event management system | State, Saga-style hold/confirm | [15-event-management-system.md](./15-event-management-system.md) · [full script](../event-management-system/INTERVIEW_SCRIPT.md) |
 
 ## Related material in this repo
 
