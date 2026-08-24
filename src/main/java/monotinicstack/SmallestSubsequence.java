@@ -6,7 +6,7 @@ import java.util.Deque;
 import java.util.Stack;
 
 class SmallestSubsequence {
-    public String smallestSubsequence(String s) {
+    public static String smallestSubsequence(String s) {
         int[] freq = new int[26];
         boolean[] used = new boolean[26];
 
@@ -35,5 +35,11 @@ class SmallestSubsequence {
         StringBuilder sb = new StringBuilder();
         for (char c : stack) sb.append(c);
         return sb.toString();
+    }
+
+    public static void main(String[] args) {
+        String input = "cbacdcbc";
+        String result = smallestSubsequence(input);
+        System.out.println(result);
     }
 }

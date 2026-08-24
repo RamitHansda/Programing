@@ -43,6 +43,28 @@ class Task implements Runnable {
 public class CyclicBerrierDemo {
     public static void main (String args[]) {
 
+
+        CyclicBarrier cb1 = new CyclicBarrier(3);
+
+        Runnable task = new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    System.out.println("waiting dim dim");
+                    cb1.await();
+                    System.out.println("dim dim");
+                } catch (BrokenBarrierException | InterruptedException e) {
+                    throw new RuntimeException(e);
+                }
+
+            }
+        };
+
+        ExecutorService executorService = Executors.newFixedThreadPool(3);
+        for (int i=0;i<3;i++){
+            executorService.submit(task);
+        }
+
         //Creating CyclicBarrier with 3 parties i.e. 3 Threads needs to call await()
         final CyclicBarrier cb = new CyclicBarrier(3, new Runnable(){
 

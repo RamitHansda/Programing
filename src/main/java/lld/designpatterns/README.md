@@ -18,7 +18,7 @@ Staff-level Java implementations for the [LLD Problems by Design Pattern](../../
 | **Facade** | `facade` | `OrderFulfillmentService.fulfillOrder(orderId)` – coordinates inventory, payment, shipping, notification |
 | **Flyweight** | `flyweight` | `TreeType` (shared), `Tree` (extrinsic x,y,scale); `TreeFactory`, `Forest` |
 | **Proxy** | `proxy` | `LazyReportProxy(reportId, loader)` implements `Report`; loads `HeavyReport` on first use |
-| **Chain of Responsibility** | `chainofresponsibility` | `LogHandler` chain: `ConsoleLogHandler`, `FileLogHandler`, `ErrorAlertHandler`; `handle(message)` |
+| **Chain of Responsibility** | `chainofresponsibility` | `ChainBuilder.start(...).then(...).build()` → `LogHandler.handle(message)`; handlers: `ConsoleLogHandler`, `FileLogHandler`, `ErrorAlertHandler` |
 | **Command** | `command` | `Command.execute()` / `undo()`; `TextEditor.execute(InsertCommand/DeleteCommand)`, `undo()`, `redo()` |
 | **Iterator** | `iterator` | `TreeCollection.iterator(PRE_ORDER|IN_ORDER|BREADTH_FIRST)`; `SimpleTreeCollection` |
 | **Mediator** | `mediator` | `ChatRoom.broadcast(sender, text)`; `ChatUser.send(text)` → room → other users |

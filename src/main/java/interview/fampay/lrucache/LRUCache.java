@@ -37,6 +37,8 @@ public class LRUCache <K,V> {
     public synchronized V get(K key){
         if(this.mapOfKeyNode.containsKey(key)){
             Node<K,V> node = this.mapOfKeyNode.get(key);
+            doublyLinkedList.removeNode(node);
+            doublyLinkedList.addToFirst(node);
             return node.value;
         }
         return  null;
