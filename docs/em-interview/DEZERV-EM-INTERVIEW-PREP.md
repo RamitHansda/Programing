@@ -5,6 +5,9 @@
 **Meet:** `meet.google.com/oaq-wakb-rzp` · Phone (US) +1 631-709-2074 PIN 173 267 705#  
 **Feedback portal (SCOUT):** interviewer link was emailed; join Meet from calendar as panelist. Candidate unlocks Meet via SCOUT portal.
 
+**Interview-ready spoken answers (say these out loud):** [`DEZERV-EM-SPOKEN-ANSWERS.md`](./DEZERV-EM-SPOKEN-ANSWERS.md)  
+**Day-of one-pager:** [`DEZERV-EM-DAYOF-CHEATSHEET.md`](./DEZERV-EM-DAYOF-CHEATSHEET.md)
+
 ---
 
 ## 1. Company Context — Know This Cold

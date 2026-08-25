@@ -1,6 +1,7 @@
 # Dezerv EM — Day-of Cheat Sheet
 **25 Aug 2026 · 12:00–13:00 IST · Arijit Mukhopadhyay (EM, Growth/Partnerships/Data)**  
-**Meet:** meet.google.com/oaq-wakb-rzp · +1 631-709-2074 PIN 173 267 705#
+**Meet:** meet.google.com/oaq-wakb-rzp · +1 631-709-2074 PIN 173 267 705#  
+**Full spoken answers:** `DEZERV-EM-SPOKEN-ANSWERS.md` (practice out loud; this card is glance-only)
 
 ## 90-sec open
 EM 10+ yrs fintech. Skydo: lead 12 on payments/settlement **10K+/day**, idempotency/recon/locks; CIO → **ISO 27001 + SOC 2**. Goldman VP: 9 eng, multi-TB risk compute (promoted &lt;1 yr). Oracle IDCS. Want Dezerv: HNI wealth trust + data product + hands-on EM who decides build/kill/AI — not backlog executor.
