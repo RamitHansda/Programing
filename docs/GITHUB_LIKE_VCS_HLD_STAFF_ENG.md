@@ -1,9 +1,16 @@
-# GitHub-like Version Control System — HLD + Interview Script
+# GitHub-like Version Control System — HLD + LLD + Interview Script
 
 **Level:** Staff / Principal  
-**Format:** Whiteboard-ready HLD with diagrams + candidate spoken script  
+**Format:** Whiteboard-ready HLD + domain LLD (object relationships) + candidate spoken script  
 **Scope:** Hosted Git + collaboration (repos, PRs, authz, webhooks)  
 **Out of scope (v1):** Actions runner fleet, package registry, multi-writer active-active refs
+
+| Part | Contents |
+|------|----------|
+| **A** | High-level design (services, sequences, scale) |
+| **B** | Low-level design (aggregates, entities, relationships, invariants) |
+| **C** | Candidate interview script |
+| **D** | 45-minute timing cheat sheet |
 
 ---
 
@@ -173,23 +180,29 @@ Gateway does **cheap** checks only (token present, throttle, route). Branch prot
 
 ---
 
-### 6. Logical data model
+### 6. Logical data model (HLD sketch)
+
+Whiteboard sketch only — full aggregates, fields, multiplicities, and invariants are in **Part B**.
 
 ```
 User ──┬── Org ── Team
        │
        └── Repository
               ├── visibility, default branch, settings
-              ├── Ref ──────────────► SHA
-              ├── Object (blob/tree/commit/tag)  [by SHA]
+              ├── Ref ──────────────► ObjectId (SHA)
+              ├── GitObject (blob/tree/commit/tag)  [by SHA]
               ├── PullRequest (base/head SHA, state)
               ├── Issue
-              ├── Webhook subscription
-              └── Protection rules / required checks
+              ├── WebhookSubscription
+              └── BranchProtectionRule / required checks
 ```
 
-- Product IDs: opaque ULID / snowflake
-- Git IDs: SHA-1 / SHA-256 (repo policy)
+| ID space | Form | Owned by |
+|----------|------|----------|
+| Product IDs | Opaque ULID / snowflake | Metadata DB |
+| Git IDs | SHA-1 / SHA-256 (repo policy) | Object store (bytes) + refs (names → SHA) |
+
+**Plane split reminder:** product rows store **SHAs and foreign keys**, never pack bytes. Git objects are content-addressed and shared by SHA within a repo (and optionally across forks via alternates — v2).
 
 ---
 
@@ -348,15 +361,370 @@ Cache ACL under `(repo_id, principal_id, acl_version)`; bump `acl_version` on me
 
 A GitHub-like system is a **correctness-first Git data plane** and a **feature-rich product plane**, meeting at an **event bus**, entered through an **Edge that routes and protects traffic** — where CDN caches what it can, and Git writes never depend on cache or webhook success.
 
+Object-level view (Part B): product aggregates **reference** Git via `RefName` + `ObjectId`; refs are mutable CAS pointers; Git objects are immutable content-addressed bytes.
+
 ---
 
-## Part B — Candidate Interview Script
+## Part B — Low-Level Design (domain model & object relationships)
+
+*Use this when the interviewer asks “what are the objects?” or “how do PR, ref, and commit relate?”*  
+*Goal: clarity on **who owns what**, **1:1 / 1:N / N:M**, and **which aggregate is the consistency boundary** — not full Java for every service.*
+
+### B.1 Three models (say this first)
+
+| Layer | What you draw | Example |
+|-------|---------------|---------|
+| **Conceptual** | Business nouns | User, Org, Repo, Branch, PR, Commit |
+| **Domain** | Aggregates / entities / VOs + invariants | `Repository`, `Ref`, `PullRequest`, `ObjectId` |
+| **Physical** (if asked) | Tables / packs / keys | `repos`, `refs`, pack files, blob store |
+
+v1 interview default: conceptual + domain. Persistence is one paragraph unless they push DB schema.
+
+### B.2 Plane ownership (objects live in one place)
+
+```
+┌──────────────────────── PRODUCT PLANE (Metadata DB) ────────────────────────┐
+│  User · Org · Team · Membership · Credential                                 │
+│  Repository · RepoSettings · BranchProtectionRule · CollaboratorGrant        │
+│  PullRequest · Review · CheckRun · Issue · WebhookSubscription · AppInstall  │
+│  (columns hold ObjectId / RefName as *references*, not bytes)                │
+└──────────────────────────────────────────────────────────────────────────────┘
+                    │ repo_id → cell                │ SHA / ref name
+                    ▼                               ▼
+┌──────────────────────── GIT DATA PLANE ─────────────────────────────────────┐
+│  RefStore:  RefName ──CAS──► ObjectId                                        │
+│  ObjectStore: ObjectId ──► GitObject bytes (blob | tree | commit | tag)      │
+│  PackIndex / Bitmap / MIDX (derived, rebuildable)                            │
+└──────────────────────────────────────────────────────────────────────────────┘
+```
+
+**Rule:** if two writers can race on the same fact, that fact has exactly one owner aggregate (usually `Ref` CAS or `PullRequest` row with optimistic version).
+
+---
+
+### B.3 Aggregates, entities, value objects
+
+| Kind | Type | Plane | Responsibility / mutable state |
+|------|------|-------|--------------------------------|
+| Aggregate root | `Organization` | Product | Name, plan, settings; owns teams & org-level roles |
+| Aggregate root | `User` | Product | Profile; owns PATs, SSH keys, sessions |
+| Entity | `Team` | Product | Belongs to Org; membership list |
+| Entity | `Membership` | Product | `(principal, scope, role)` — user↔org/team/repo |
+| Entity | `Credential` | Product | PAT / SSH public key / OIDC subject binding |
+| Aggregate root | `Repository` | Product | Visibility, default branch, `cell_id`, settings; **does not** embed objects/refs |
+| Entity | `BranchProtectionRule` | Product | Pattern, required checks, enforce admins, allow force-push? |
+| Entity | `CollaboratorGrant` | Product | Direct user/team permission on repo |
+| Aggregate root | `PullRequest` | Product | Number, base/head refs+SHAs, state, review decision |
+| Entity | `Review` | Product | Reviewer, state (`APPROVED`/`CHANGES_REQUESTED`/`COMMENTED`) |
+| Entity | `CheckRun` / `StatusCheck` | Product | Context name, SHA, state (`PENDING`/`SUCCESS`/`FAILURE`) |
+| Aggregate root | `Issue` | Product | Independent of Git bytes; may link commits via SHA |
+| Aggregate root | `WebhookSubscription` | Product | URL, secret, event filters, delivery cursor |
+| Aggregate root | `Ref` (per name) | Git | `refs/heads/*`, `refs/tags/*`, `refs/pull/N/head` → `ObjectId` |
+| Entity (content-addressed) | `GitObject` | Git | Immutable blob/tree/commit/tag bytes keyed by SHA |
+| Value object | `ObjectId` | Both | SHA-1/256 hex; equality by value |
+| Value object | `RefName` | Both | Canonical ref path string |
+| Value object | `RepoId`, `UserId`, `OrgId`, `PullRequestId` | Product | Opaque product IDs |
+| Value object | `AclVersion` | Product | Monotonic stamp for permission cache invalidation |
+| Value object | `Capability` | Product | `git:read`, `git:write`, `admin`, `merge`, … |
+| Domain service | `AuthZEvaluator` | Product | principal ∪ teams ∪ grants → capabilities + branch rules |
+| Domain service | `MergeEngine` | Product→Git | Builds merge/squash/rebase commit; asks Ref CAS |
+| Domain service | `ReceivePackPipeline` | Git | Quarantine → fsck → policy → durable write → ref CAS |
+| Domain event | `RepoEvent` | Bus | After ACK: push, ref update, PR opened/merged, … |
+
+**Intentionally not modeled as domain entities:** HTTP handlers, pack bitmaps (derived), CDN cache entries, notification templates.
+
+---
+
+### B.4 Relationship diagram (multiplicity)
+
+```
+Org 1 ───────────── * Team
+Org 1 ───────────── * Membership (role: OWNER|MEMBER|BILLING)
+User * ──────────── * Org          (via Membership)
+User * ──────────── * Team         (via TeamMembership)
+User 1 ──────────── * Credential
+
+Org 1 ───────────── * Repository   (owner may also be User for personal repos)
+User|Org 1 ──────── 1 Repository.owner
+
+Repository 1 ────── * CollaboratorGrant ──► User|Team + Role
+Repository 1 ────── * BranchProtectionRule
+Repository 1 ────── * Issue
+Repository 1 ────── * WebhookSubscription
+Repository 1 ────── * PullRequest
+Repository 1 ────── * Ref                 (Git plane; keyed by RefName)
+Repository 1 ────── * GitObject           (Git plane; keyed by ObjectId)
+
+PullRequest * ───── 1 Repository
+PullRequest 1 ───── * Review
+PullRequest 1 ───── * CheckRun            (keyed by (sha, context); often global per SHA)
+PullRequest ──────► RefName base + head   (e.g. refs/heads/main, refs/heads/feature)
+PullRequest ──────► ObjectId base_sha, head_sha, merge_base_sha?
+
+Ref 1 ────────────► ObjectId              (points at commit or annotated tag)
+Commit ───────────► Tree ObjectId
+Commit * ───────── * parent Commit        (DAG; merge has 2+ parents)
+Tree ───────────── * (mode, name, ObjectId)  → blob|tree
+Tag ──────────────► ObjectId              (annotated tag object)
+
+Fork (optional v1.5): Repository.fork_of ──► RepositoryId
+  (object alternates: child may read parent packs; refs stay per-repo)
+```
+
+#### Cardinality cheat sheet (say out loud)
+
+| From → To | Cardinality | Notes |
+|-----------|-------------|-------|
+| Repository → Ref | 1 : N | Names unique per repo; CAS unit = one ref |
+| Repository → GitObject | 1 : N | Content-addressed; many refs can share one SHA |
+| Ref → ObjectId | N : 1 | Many branch tips can point at same commit |
+| PullRequest → Repository | N : 1 | PR number unique **within** repo |
+| PullRequest → Reviews | 1 : N | Latest review per user often derived |
+| User ↔ Team | N : M | Via membership join entity |
+| CheckRun → ObjectId | N : 1 | Checks attach to a commit SHA, not to a branch name |
+
+---
+
+### B.5 Class / aggregate sketch (interview board)
+
+```
+┌──────────────────┐       ┌───────────────────┐
+│ Organization     │◇──────│ Team              │
+│ + id, name       │       │ + id, name        │
+└────────┬─────────┘       │ + memberIds[]     │
+         │                 └───────────────────┘
+         │ owns
+         ▼
+┌──────────────────┐       ┌────────────────────────────┐
+│ Repository       │◇──────│ BranchProtectionRule       │
+│ + id, ownerId    │       │ + pattern (refs/heads/…)   │
+│ + visibility     │       │ + requiredCheckContexts[]  │
+│ + defaultBranch  │       │ + requireReviews, …        │
+│ + cellId         │       └────────────────────────────┘
+│ + aclVersion     │
+└────────┬─────────┘
+         │ references (by id / SHA only)
+         │
+    ┌────┴──────────────────────────────┐
+    │                                   │
+    ▼                                   ▼
+┌──────────────────┐          ┌──────────────────┐
+│ PullRequest      │          │ Ref (Git plane)  │
+│ + number         │          │ + name: RefName  │
+│ + state          │          │ + target: ObjectId│
+│ + baseRef, head  │          │ + cas(old→new)   │
+│ + baseSha,headSha│          └────────┬─────────┘
+│ + authorId       │                   │ points to
+└────────┬─────────┘                   ▼
+         │◇ reviews           ┌──────────────────┐
+         ▼                    │ GitObject        │
+┌──────────────────┐          │ + id: ObjectId   │
+│ Review           │          │ + type           │
+│ + reviewerId     │          │ + payload bytes  │
+│ + state          │          └──────────────────┘
+└──────────────────┘                    ▲
+                                        │ Commit.tree / parents
+                              ┌─────────┴─────────┐
+                              │ CommitPayload     │
+                              │ tree, parents[]   │
+                              │ author, message   │
+                              └───────────────────┘
+```
+
+Composition (`◇` / filled diamond): child lifecycle tied to parent (teams under org, protection rules under repo, reviews under PR).  
+Association / reference: PR **points at** SHAs and ref names; deleting a PR does **not** delete Git objects.
+
+---
+
+### B.6 Key fields (enough to reason about flows)
+
+```text
+Repository {
+  id: RepoId
+  owner: PrincipalId          // UserId | OrgId
+  name: String                // unique within owner
+  visibility: PUBLIC|PRIVATE|INTERNAL
+  default_branch: RefName     // usually refs/heads/main
+  cell_id: CellId
+  acl_version: AclVersion
+  settings: { allow_ff_only?, delete_branch_on_merge?, … }
+}
+
+Ref {
+  repo_id: RepoId
+  name: RefName               // refs/heads/main | refs/tags/v1 | refs/pull/42/head
+  object_id: ObjectId
+  // update = CAS(expected_old, new)
+}
+
+PullRequest {
+  repo_id: RepoId
+  number: Int                 // monotonic per repo
+  state: OPEN|CLOSED|MERGED
+  author_id: UserId
+  title, body
+  base_ref: RefName           // target branch
+  head_ref: RefName           // source branch (or fork ref)
+  base_sha: ObjectId          // snapshot at last sync / open
+  head_sha: ObjectId
+  merge_sha?: ObjectId        // set on success
+  head_repo_id?: RepoId       // cross-fork PRs
+  version: Long               // optimistic lock for product updates
+}
+
+BranchProtectionRule {
+  repo_id: RepoId
+  pattern: String             // "main" or "release/*"
+  required_approving_reviews: Int
+  required_check_contexts: [String]
+  dismiss_stale_reviews: Bool
+  require_linear_history: Bool
+  allow_force_push: Bool
+  allow_deletions: Bool
+}
+
+RepoEvent {
+  event_id: IdempotencyKey
+  repo_id: RepoId
+  type: PUSH|REF_UPDATE|PR_OPENED|PR_MERGED|…
+  actor_id: UserId
+  ref?: RefName
+  before?: ObjectId
+  after?: ObjectId
+  occurred_at
+}
+```
+
+---
+
+### B.7 Lifecycles
+
+```
+PullRequest:   OPEN ──► MERGED
+                 └────► CLOSED
+                 CLOSED ──► OPEN   (reopen; rare)
+
+Review:        COMMENTED | APPROVED | CHANGES_REQUESTED
+               (latest per reviewer wins for merge gate)
+
+CheckRun:      PENDING ──► SUCCESS | FAILURE | CANCELLED
+               (keyed by commit SHA + context; new push → new SHA → new checks)
+
+Ref:           created → updated (CAS) → deleted
+               force-push = CAS that is non-fast-forward (policy may forbid)
+
+Repository:    ACTIVE ──► ARCHIVED ──► DELETED (soft)
+```
+
+---
+
+### B.8 Invariants (tie behavior to types)
+
+1. **Ref CAS:** `update(ref, old, new)` succeeds iff `current(ref) == old`; never last-writer-wins.
+2. **ACK:** client push ACK only after objects durable **and** all advertised ref CAS succeed (or none — atomic per receive-pack batch policy).
+3. **Reachability:** a successful ref update’s `new` ObjectId must exist in the object store (and pass fsck/quarantine).
+4. **PR head sync:** while `PR.state == OPEN`, `refs/pull/N/head` tracks head tip; product `head_sha` updated from `RepoEvent` (may lag briefly if async — prefer sync update in PR service consumer with idempotency).
+5. **Merge gate:** merge allowed only if AuthZ says `merge`, protection rules satisfied (reviews + CheckRuns on **head_sha**), and base ref CAS succeeds.
+6. **ACL freshness:** cached AuthZ entries keyed by `(repo_id, principal_id, acl_version)`; membership/grant changes bump `Repository.acl_version`.
+7. **Visibility:** private repo GitObject / Ref reads require `git:read`; public may skip auth but still rate-limit.
+8. **No product bytes in Git store; no pack bytes in SQL.**
+
+---
+
+### B.9 Cross-object maps for critical flows
+
+#### Push (which objects move)
+
+```
+Credential ──AuthN──► User
+User + Repository + BranchProtectionRule ──AuthZ──► Capability
+Pack bytes ──quarantine──► GitObject(s)   [new SHAs]
+receive-pack advertised tips ──CAS──► Ref.object_id
+success ──emit──► RepoEvent(PUSH, before, after)
+RepoEvent ──► WebhookSubscription deliveries
+           ──► Search index
+           ──► open PullRequest.head_sha (if head matches)
+           ──► invalidate CheckRun expectations for new SHA
+```
+
+#### Open PR
+
+```
+Repository + head Ref + base Ref
+  ──create──► PullRequest(OPEN, base_sha, head_sha)
+  ──create/update──► Ref(refs/pull/N/head → head_sha)
+  ──emit──► RepoEvent(PR_OPENED)
+DiffService(merge_base(base_sha, head_sha), trees)  // cached by (commit, path)
+```
+
+#### Merge PR
+
+```
+PullRequest(OPEN) + Reviews + CheckRuns(head_sha)
+  ──policy──► ok
+MergeEngine ──writes──► GitObject(merge|squash|rebase commit)
+           ──CAS──► Ref(base_ref: base_sha → merge_sha)
+           ──update──► PullRequest(MERGED, merge_sha)
+           ──optional──► delete head Ref
+           ──emit──► RepoEvent(PR_MERGED)
+Busy main: MergeQueue serializes “next CAS onto default branch”
+```
+
+#### AuthZ resolution (object graph)
+
+```
+Principal
+  ├─ direct CollaboratorGrant on Repository
+  ├─ TeamMembership → Team → team grants on Repository
+  └─ Org Membership → org-default / owner capabilities
+       ──► effective Role ──► Capability set
+Branch write? also match BranchProtectionRule against RefName
+```
+
+---
+
+### B.10 Persistence mapping (only if asked)
+
+| Domain | Physical |
+|--------|----------|
+| `User`, `Org`, `Team`, `Membership`, `Repository`, `PR`, `Review`, `Issue`, `WebhookSubscription`, `BranchProtectionRule` | Strongly consistent SQL (sharded by org or cell) |
+| `Ref` | Ref service / DB with per-repo linearizable CAS (etcd/Spanner/SQL row lock — pick one and defend) |
+| `GitObject` | Packfiles on SSD + content-addressed blob (S3); index by SHA |
+| `RepoEvent` | Log/bus (Kafka); consumers idempotent on `event_id` |
+| AuthZ cache | Redis/local: key `(repo_id, principal_id, acl_version)` |
+
+Indexes that matter: `(owner_id, repo_name)`, `(repo_id, pr_number)`, `(repo_id, ref_name)`, object SHA primary key, `(sha, check_context)`.
+
+---
+
+### B.11 Patterns (only where they clarify variation)
+
+| Pattern | Where |
+|---------|--------|
+| **CAS / optimistic concurrency** | `Ref` updates; `PullRequest.version` for metadata edits |
+| **Content-addressed immutability** | `GitObject` — create new SHA, never mutate |
+| **Strategy** | Merge methods: merge commit / squash / rebase |
+| **Pipeline** | `ReceivePackPipeline` stages (quarantine → policy → durable → CAS → event) |
+| **Outbox / event** | Persist `RepoEvent` with ACK path or immediate emit after commit (at-least-once + idempotent consumers) |
+| **Cache aside + version stamp** | AuthZ (`AclVersion`) |
+
+Avoid god `GitHubService`; keep AuthZ, Repo, PR, ReceivePack as separate application services over these aggregates.
+
+---
+
+### B.12 LLD one-liner
+
+> Product aggregates (`Repository`, `PullRequest`, AuthZ grants) **reference** Git by `RefName` + `ObjectId`; the Git plane owns **immutable objects** and **linearizable refs**; relationships are mostly **1:N from Repository**, with PRs/reviews in SQL and commits as a **DAG of content-addressed objects** — never mixed into one mega-row.
+
+---
+
+## Part C — Candidate Interview Script
 
 *Speak as the candidate. Draw while talking.*
 
 ### Opening
 
-“I’d like to design a GitHub-like hosted version control system. Before I jump to boxes, I’ll clarify scope, state assumptions, then walk through API → high-level architecture → deep dives on the push path, storage, and scaling. Please interrupt if you want me to go deeper anywhere.”
+“I’d like to design a GitHub-like hosted version control system. Before I jump to boxes, I’ll clarify scope, state assumptions, then walk through API → high-level architecture → **domain objects and relationships** if useful → deep dives on the push path, storage, and scaling. Please interrupt if you want me to go deeper anywhere.”
 
 ### Step 1 — Clarify requirements
 
@@ -413,6 +781,18 @@ Also — when I say **Edge**, I don’t mean only CDN. CDN is one edge function.
 5. After push ACK, Git emits `RepoEvent` → webhooks, search, PR head update, notifications
 
 I would **not** store Git blobs in the relational DB — only SHAs and product metadata.”
+
+### Step 4b — Domain model / object relationships (when asked, or ~2–3 min)
+
+“Quick object model so relationships are clear: *(draw Part B §B.4 / §B.5)*
+
+**Product plane:** `Org` has many `Team`s and `Repository`s. `User` links to orgs/teams via membership. `Repository` owns settings, collaborator grants, branch protection rules, issues, webhook subscriptions, and PRs.
+
+**Git plane:** each `Repository` has many `Ref`s (name → SHA) and many immutable `GitObject`s. A `Commit` points at a `Tree` and parent commits — that’s the DAG. Refs are the **mutable** pointers; objects are **content-addressed and never updated**.
+
+**PR bridge:** a `PullRequest` is a product row that **references** `base_ref` / `head_ref` and stores `base_sha` / `head_sha`. We also maintain `refs/pull/N/head`. Reviews and check runs hang off the PR / commit SHA — they don’t live inside the pack store.
+
+**Consistency boundaries:** ref CAS is the Git write boundary; PR row (+ version) is the product write boundary. Merge creates a new commit object, then CAS’s the base branch, then marks the PR merged.”
 
 ### Step 5 — Deep dive: Push
 
@@ -481,26 +861,31 @@ If you want, I can alternatively sketch multi-region active-active — but I’d
 
 ### Step 11 — Close
 
-“To summarize: I’d build a GitHub-like system as a **correctness-first Git data plane** plus a **product plane**, fronted by an **Edge that includes CDN and API gateway behavior**, with **ref CAS** as the source of truth for branches and **async fanout** for everything else.
+“To summarize: I’d build a GitHub-like system as a **correctness-first Git data plane** plus a **product plane**, fronted by an **Edge that includes CDN and API gateway behavior**, with **ref CAS** as the source of truth for branches and **async fanout** for everything else. Product objects reference Git through **RefName + ObjectId**; packs never sit in SQL.
 
 I’m happy to go deeper on object GC, LFS, search indexing, or the merge queue next — where would you like me to dig in?”
 
 ---
 
-## Part C — 45-minute timing cheat sheet
+## Part D — 45-minute timing cheat sheet
 
 | Time | What to do | What to draw |
 |------|------------|--------------|
 | 0–3 min | Clarify requirements + scope | Bullet list only |
 | 3–5 min | Core thesis + Edge ≠ CDN | Edge box with CDN + API GW inside |
-| 5–15 min | System context + service HLD | Part A §3 and §5 |
-| 15–25 min | Push sequence deep dive | Part A §7 |
-| 25–35 min | Storage, cells, scale | Part A §11 |
-| 35–40 min | PR/merge + AuthZ + consistency | Short flows |
-| 40–45 min | Trade-offs + close + ask where to go deeper | Trade-off table |
+| 5–12 min | System context + service HLD | Part A §3 and §5 |
+| 12–18 min | **Domain objects + relationships** (if interviewer cares / LLD lean) | Part B §B.4–B.5; skip if pure HLD |
+| 18–28 min | Push sequence deep dive | Part A §7 (+ Part B §B.9 push map) |
+| 28–36 min | Storage, cells, scale | Part A §11 |
+| 36–42 min | PR/merge + AuthZ + consistency | Part A §9 + Part B merge map |
+| 42–45 min | Trade-offs + close + ask where to go deeper | Trade-off table |
+
+*If the round is pure HLD:* spend the 12–18 min slot on push instead, and only name aggregates verbally.  
+*If the round is LLD-leaning:* shrink cells/scale and spend more time on Part B invariants + class sketch.
 
 **Habits**
 - Draw while talking; narrate each box as you add it
 - Prefer **one deep correct path** (push + refs) over shallow coverage of every feature
+- When drawing objects: say **cardinality** and **which plane owns the row/bytes**
 - If stuck: “I’ll state an assumption and proceed — correct me if wrong”
 - Park tangents: “Does that change the Git/product split or the ACK-before-fanout rule?”
