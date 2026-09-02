@@ -861,6 +861,179 @@ Branch write? also match BranchProtectionRule against RefName
 
 Indexes that matter: `(owner_id, repo_name)`, `(repo_id, pr_number)`, `(repo_id, ref_name)`, object SHA primary key, `(sha, check_context)`.
 
+#### B.10a Metadata DB schema (relational)
+
+**Not in SQL:** blob/tree/commit/tag **bytes** (object store only). SQL keeps **IDs + SHAs as text**.
+
+```text
+users
+  id              PK ULID
+  login           UNIQUE
+  email           UNIQUE
+  display_name
+  status          ACTIVE|SUSPENDED
+  created_at
+
+credentials
+  id              PK
+  user_id         FK → users
+  type            PAT|SSH_KEY|OIDC_LINK
+  lookup_hash     UNIQUE   -- PAT hash or SSH fingerprint
+  public_key      NULL     -- SSH only
+  scopes          TEXT[]   -- PAT scopes
+  expires_at      NULL
+  created_at
+
+organizations
+  id              PK
+  login           UNIQUE
+  name
+  plan
+  created_at
+
+teams
+  id              PK
+  org_id          FK → organizations
+  slug            -- UNIQUE(org_id, slug)
+  name
+  privacy         VISIBLE|SECRET
+
+org_memberships
+  org_id          FK
+  user_id         FK
+  role            OWNER|MEMBER|BILLING
+  PK (org_id, user_id)
+
+team_memberships
+  team_id         FK
+  user_id         FK
+  role            MEMBER|MAINTAINER
+  PK (team_id, user_id)
+
+repositories
+  id              PK
+  owner_type      USER|ORG
+  owner_id        -- users.id or organizations.id
+  name            -- UNIQUE(owner_type, owner_id, name)
+  visibility      PUBLIC|PRIVATE|INTERNAL
+  default_branch  TEXT        -- e.g. main (logical name)
+  cell_id         TEXT
+  acl_version     BIGINT      -- bump on grant/membership change
+  settings_json   JSONB
+  status          ACTIVE|ARCHIVED|DELETED
+  created_at
+
+collaborator_grants
+  id              PK
+  repo_id         FK → repositories
+  subject_type    USER|TEAM
+  subject_id
+  role            READ|TRIAGE|WRITE|MAINTAIN|ADMIN
+  UNIQUE(repo_id, subject_type, subject_id)
+
+branch_protection_rules
+  id              PK
+  repo_id         FK
+  pattern         TEXT        -- "main", "release/*"
+  required_approving_reviews  INT
+  required_check_contexts     TEXT[]
+  dismiss_stale_reviews       BOOL
+  require_linear_history      BOOL
+  allow_force_push            BOOL
+  allow_deletions             BOOL
+
+pull_requests
+  id              PK
+  repo_id         FK
+  number          INT         -- UNIQUE(repo_id, number)
+  author_id       FK → users
+  title, body
+  state           OPEN|CLOSED|MERGED
+  base_ref        TEXT        -- refs/heads/main
+  head_ref        TEXT
+  base_sha        CHAR(64)    -- ObjectId hex
+  head_sha        CHAR(64)
+  merge_sha       NULL
+  head_repo_id    NULL        -- fork PRs
+  version         BIGINT      -- optimistic lock
+  created_at, updated_at, merged_at
+
+reviews
+  id              PK
+  pull_request_id FK
+  reviewer_id     FK → users
+  state           COMMENTED|APPROVED|CHANGES_REQUESTED
+  body
+  commit_sha      CHAR(64)    -- SHA reviewed
+  created_at
+
+check_runs
+  id              PK
+  repo_id         FK
+  sha             CHAR(64)
+  context         TEXT        -- "ci/tests"
+  state           PENDING|SUCCESS|FAILURE|CANCELLED
+  target_url
+  UNIQUE(repo_id, sha, context)
+
+issues
+  id              PK
+  repo_id         FK
+  number          INT         -- UNIQUE(repo_id, number)
+  author_id       FK
+  title, body
+  state           OPEN|CLOSED
+  created_at
+
+webhook_subscriptions
+  id              PK
+  repo_id         FK          -- or org_id for org hooks
+  url
+  secret_hash
+  events          TEXT[]
+  active          BOOL
+  created_at
+
+-- Optional outbox for reliable RepoEvent publish
+repo_event_outbox
+  event_id        PK
+  repo_id
+  type            PUSH|PR_OPENED|PR_MERGED|…
+  payload_json    JSONB
+  created_at
+  published_at    NULL
+```
+
+#### Ref store schema (separate strong DB / service)
+
+```text
+refs
+  repo_id         -- part of PK
+  name            -- refs/heads/main  (part of PK)
+  object_id       CHAR(64)
+  updated_at
+  -- CAS: UPDATE … WHERE object_id = expected_old
+```
+
+#### ER sketch (metadata only)
+
+```
+users 1──* credentials
+users *──* organizations     via org_memberships
+users *──* teams             via team_memberships
+organizations 1──* teams
+organizations|users 1──* repositories
+repositories 1──* collaborator_grants
+repositories 1──* branch_protection_rules
+repositories 1──* pull_requests 1──* reviews
+repositories 1──* check_runs
+repositories 1──* issues
+repositories 1──* webhook_subscriptions
+repositories 1──* refs          (ref DB)
+```
+
+**Sharding hint:** metadata by `org_id` / `owner_id`; Git cell by `repositories.cell_id`; never shard Git objects via SQL.
+
 ---
 
 ### B.11 Patterns (only where they clarify variation)
