@@ -536,6 +536,172 @@ Association / reference: PR **points at** SHAs and ref names; deleting a PR does
 
 ---
 
+### B.5a Git object & ref schemas (blob / tree / commit / tag / branch)
+
+Git stores objects as: `SHA-1/256( "<type> <size>\0" + payload )`.  
+Below: **logical schema** (what you draw) and **on-disk payload** (what Git actually hashes).
+
+#### Shared envelope
+
+```text
+GitObject {
+  id:          ObjectId      // hex SHA of header+payload
+  type:        blob | tree | commit | tag
+  size:        u64           // payload byte length
+  payload:     bytes         // type-specific (below)
+}
+```
+
+#### 1. Blob — file contents
+
+```text
+Blob {
+  // no filename, no mode — those live in the parent Tree entry
+  content: bytes             // raw file bytes (text or binary)
+}
+```
+
+On-disk payload = raw `content` only.
+
+```text
+id = SHA("blob <len>\0" + content)
+```
+
+#### 2. Tree — directory listing
+
+```text
+Tree {
+  entries: TreeEntry[]       // typically sorted by name
+}
+
+TreeEntry {
+  mode: Mode                 // e.g. 100644 file, 100755 exec, 040000 tree, 120000 symlink, 160000 gitlink
+  name: string               // single path segment ("README.md", "src") — NOT a full path
+  object_id: ObjectId        // → Blob | Tree | Commit(gitlink)
+}
+```
+
+On-disk payload (concatenated entries, no separators between records beyond the NUL after name):
+
+```text
+for each entry:
+  "<mode> <name>\0" + <20-or-32-byte raw object_id>
+```
+
+```text
+id = SHA("tree <len>\0" + payload)
+```
+
+#### 3. Commit — snapshot + history
+
+```text
+Commit {
+  tree:        ObjectId      // root Tree of this snapshot
+  parents:     ObjectId[]    // 0 = root commit; 1 = normal; 2+ = merge
+  author:      Identity      // who wrote the change
+  committer:   Identity      // who created this commit object
+  encoding?:   string        // optional
+  message:     string        // subject + body
+}
+
+Identity {
+  name:  string
+  email: string
+  when:  Timestamp           // unix seconds + timezone offset, e.g. 1690000000 +0530
+}
+```
+
+On-disk payload (LF-separated headers, blank line, then message):
+
+```text
+tree <tree_sha>
+parent <parent_sha>          # repeated 0..N times
+author <name> <<email>> <unix> <tz>
+committer <name> <<email>> <unix> <tz>
+<optional headers>
+
+<message>
+```
+
+```text
+id = SHA("commit <len>\0" + payload)
+```
+
+#### 4. Tag — annotated tag object
+
+```text
+Tag {
+  object:     ObjectId       // usually a Commit; can be tree/blob/tag
+  type:       commit|tree|blob|tag   // type of `object`
+  name:       string         // tag name, e.g. "v1.2.0"
+  tagger:     Identity
+  message:    string
+  signature?: string         // optional GPG/SSH signature block
+}
+```
+
+On-disk payload:
+
+```text
+object <sha>
+type <commit|tree|blob|tag>
+tag <name>
+tagger <name> <<email>> <unix> <tz>
+
+<message>
+<optional signature>
+```
+
+```text
+id = SHA("tag <len>\0" + payload)
+```
+
+**Lightweight tag** has **no** tag object — only a `Ref` (see below).
+
+#### 5. Branch (and other refs) — NOT a GitObject
+
+```text
+Ref {
+  repo_id:    RepoId
+  name:       RefName        // refs/heads/main | refs/tags/v1 | refs/pull/42/head
+  object_id:  ObjectId       // usually → Commit; annotated tag ref → Tag object
+  // peeled_id?: ObjectId    // optional cache: commit under an annotated tag
+}
+
+// Branch = Ref where name starts with refs/heads/
+// Tag ref = Ref where name starts with refs/tags/
+```
+
+Update API (linearizable):
+
+```text
+CAS(repo_id, name, expected_old: ObjectId|null, new: ObjectId|null) → ok | conflict
+```
+
+#### Relationship at a glance
+
+```
+Ref (branch/tag name)                ← mutable pointer (schema = Ref)
+        │
+        ▼
+   Commit | Tag                      ← immutable GitObject
+        │       └─ object → Commit
+        ▼
+      Tree
+        ├─ TreeEntry → Blob          ← file bytes
+        └─ TreeEntry → Tree          ← subdirectory
+```
+
+| Name you say | Schema type | Mutable? |
+|--------------|-------------|----------|
+| file content | `Blob` | no |
+| directory | `Tree` + `TreeEntry[]` | no |
+| snapshot / history node | `Commit` | no |
+| annotated release label | `Tag` | no |
+| branch / lightweight tag | `Ref` | **yes** (CAS) |
+
+---
+
 ### B.6 Key fields (enough to reason about flows)
 
 ```text
