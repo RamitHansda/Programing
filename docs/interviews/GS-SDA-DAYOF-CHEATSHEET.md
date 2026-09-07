@@ -6,6 +6,8 @@
 
 You already have long LLD notes: rate limiter `docs/lld/staff-engineer-interviews/01-rate-limiter.md`, LRU `07-cache-eviction.md`, parking lot `02-parking-lot.md`, notifications `09-notification-dispatcher.md`, pub-sub `14-pub-sub-message-hub.md`, checkout `13-shopping-cart-checkout.md`. This sheet is what to **say**.
 
+**VP-only research** (what this competency asks at VP vs Associate): `docs/interviews/GS-SDA-VP-WHAT-THEY-ASK.md`.
+
 ---
 
 ## 1. What this competency is

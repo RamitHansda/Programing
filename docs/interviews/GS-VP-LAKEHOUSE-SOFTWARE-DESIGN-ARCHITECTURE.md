@@ -9,6 +9,8 @@
 
 **Day-of script for this competency:** [`GS-SDA-DAYOF-CHEATSHEET.md`](./GS-SDA-DAYOF-CHEATSHEET.md) — spoken HLD/LLD, Java concurrency, CoderPad skeletons.
 
+**VP-level “what they actually ask”:** [`GS-SDA-VP-WHAT-THEY-ASK.md`](./GS-SDA-VP-WHAT-THEY-ASK.md).
+
 This file is the **question bank + sources**. Goldman is scoring **software design** (components, APIs, data model, concurrency, trade-offs), not Spark trivia. Lakehouse prompts below are **backup** if they re-scope to a data platform.
 
 Sources are labelled: **reported** (candidate write-ups of the GS “Software Design and Architecture” competency) vs **team-likely** (this JD + GS data-engineer / lakehouse reports + public Legend Lakehouse architecture).
