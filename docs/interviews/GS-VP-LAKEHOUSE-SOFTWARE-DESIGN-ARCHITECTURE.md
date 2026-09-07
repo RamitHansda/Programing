@@ -7,7 +7,11 @@
 **Named competency:** Software Design and Architecture  
 **Format:** 60 min, Zoom + CoderPad
 
-This note is a question bank for *this* round, not the whole Superday. Sources are labelled: **reported** (candidate write-ups of the GS “Software Design and Architecture” competency) vs **team-likely** (this JD + GS data-engineer / lakehouse reports + public Legend Lakehouse architecture).
+**Day-of script for this competency:** [`GS-SDA-DAYOF-CHEATSHEET.md`](./GS-SDA-DAYOF-CHEATSHEET.md) — spoken HLD/LLD, Java concurrency, CoderPad skeletons.
+
+This file is the **question bank + sources**. Goldman is scoring **software design** (components, APIs, data model, concurrency, trade-offs), not Spark trivia. Lakehouse prompts below are **backup** if they re-scope to a data platform.
+
+Sources are labelled: **reported** (candidate write-ups of the GS “Software Design and Architecture” competency) vs **team-likely** (this JD + GS data-engineer / lakehouse reports + public Legend Lakehouse architecture).
 
 ---
 
@@ -221,43 +225,46 @@ Do **not** spend the hour retelling career narrative. They have a design rubric 
 
 ## 8. How to run the 60 minutes (VP bar)
 
-1. **Clarify 90 seconds:** functional, then non-functional (throughput, freshness, consistency, retention, who is entitled to see what).
-2. **State the grain** of the core table (one row = ?).
-3. **Draw or list 5 boxes:** source → bus → bronze → compute → gold/serving → catalog/governance. Talk if they don’t want diagrams.
-4. **Go deep on two components they pick.** For this team, likely Iceberg writer + quality/recon, or Kafka + schema registry.
-5. **Failure modes they care about:** duplicate, late, schema break, poison message, Spark skew, commit conflict, entitlement miss, recon break, region residency.
-6. **Ops last 5 min:** metrics (freshness, row-count drift, file size, commit fail rate), backfill, on-call.
+Default: this is **software design**, not a lakehouse oral exam. Use the day-of sheet.
+
+1. **Clarify 90 seconds:** functional, then non-functional (throughput, latency, consistency, durability).
+2. **API + data model** — 3 endpoints or 5 classes. Grain of the core record.
+3. **Happy path** through 4–6 components.
+4. **Go deep on the two parts they pick** — usually concurrency, queue, cache, or idempotency.
+5. **Failure + ops:** duplicate, node death, poison message, freshness/lag metrics.
 
 Phrases that score at GS VP:
 
-- “I’d fail closed and page, not silently drop a regulatory fact.”
-- “At-least-once plus MERGE on (business_key, batch_id); I won’t claim exactly-once unless the sink is idempotent.”
-- “Money columns are Decimal; recon is sum + count vs source, not ‘looks right in a dashboard.’”
-- “Iceberg snapshot is the audit point; time-travel is how we roll back gold.”
+- “Consistency boundary is this aggregate / this Kafka partition.”
+- “At-least-once plus an idempotency key; I won’t claim magic exactly-once.”
+- “Fail closed on OTP, payments, risk.”
+- “Money is BigDecimal / long; floats are a design bug.”
 
 Phrases that lose:
 
-- Eventual consistency everywhere.
-- “We’ll just use Databricks” with no Iceberg/catalog story.
-- Floats for notional / PnL.
-- Scaling talk with no data-quality or entitlements.
+- Eventual consistency on a ledger “because CAP.”
+- Client-only rate limiting as the whole answer.
+- Redis as source of truth for messages or money.
+- Spark/Iceberg dump when they asked for a URL shortener or notification service.
+
+If they re-scope to a data platform, switch to section 4 (medallion, Iceberg, recon, entitlements).
 
 ---
 
 ## 9. Practice order for 8 Sept (highest expected value)
 
-Do these out loud, 25 minutes each, CoderPad open:
+This competency is **Software Design and Architecture**. Practice in this order (see the day-of sheet for scripts):
 
-1. **Rate limiter** (talk + sliding-window code) — most reported Design-competency question.
-2. **Lakehouse for firm analytics/AI** (section 4.1) — most likely *team* question.
-3. **Market-data pipeline** Kafka → Iceberg, with late data + schema evolution.
-4. **Resume HLD** of Goldman risk platform, then “now land this in a lakehouse.”
-5. **LRU** coded cold.
-6. **Notification or WhatsApp delivery** + Kafka vs Redis.
-7. **CDC + Iceberg MERGE + recon** from a legacy warehouse (Sybase IQ / Hadoop).
-8. **Spark job is slow / skewed** — spoken debug script.
+1. **Resume HLD** of Goldman risk (stream → derived state → consumers).
+2. **Rate limiter** (talk + sliding-window code) — most reported SDA question.
+3. **URL shortener** HLD, talk-only.
+4. **LRU** coded cold.
+5. **Notification or WhatsApp delivery** + Kafka vs Redis.
+6. **Java threads / ThreadPool / Builder immutability**.
+7. **Lakehouse for firm analytics/AI** (section 4.1) — only if they re-scope to a data platform.
+8. **Market-data pipeline** Kafka → Iceberg — same backup track.
 
-You already have long-form material in-repo for (2) and (3): `docs/data_eng/HLD-Large-Scale-Data-Pipeline.md`, `docs/data_eng/SPARK_ARCHITECTURE_STAFF_ENG.md`, `docs/lld/staff-engineer-interviews/01-rate-limiter.md`, `docs/lld/staff-engineer-interviews/07-cache-eviction.md`.
+Long-form LLD: `docs/lld/staff-engineer-interviews/01-rate-limiter.md`, `07-cache-eviction.md`, `09-notification-dispatcher.md`, `14-pub-sub-message-hub.md`. Lakehouse backup: `docs/data_eng/HLD-Large-Scale-Data-Pipeline.md`.
 
 ---
 
