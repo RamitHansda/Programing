@@ -2,6 +2,8 @@
 
 Use this with any guide in `01`–`14`. Each problem file starts with an **Interview-ready snapshot** tuned to that prompt; this page is the **shared clock and behaviors** that panels expect.
 
+For **HLD / distributed system design** rounds (capacity, APIs, data ownership, failures), use the companion clock: [`../../SYSTEM_DESIGN_INTERVIEW_STEPS.md`](../../SYSTEM_DESIGN_INTERVIEW_STEPS.md).
+
 ## What “interview-ready” means here
 
 - You can **open cold** with a short goal statement and **default assumptions**.
