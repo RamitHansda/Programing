@@ -4,6 +4,8 @@ A Staff Engineer designs a system well. A Principal Engineer asks whether the sy
 
 This document covers the **mindset, process, vocabulary, and interview execution** of a Principal Engineer-level system design, applicable to roles at L7/P7/Distinguished Engineer level and above.
 
+**Day-of clock (steps you must not miss):** [`SYSTEM_DESIGN_INTERVIEW_STEPS.md`](./SYSTEM_DESIGN_INTERVIEW_STEPS.md) — ordered 45/60-min sequence, whiteboard checklist, and common skips.
+
 ---
 
 ## 1. The Bar: What Separates Principal from Staff
