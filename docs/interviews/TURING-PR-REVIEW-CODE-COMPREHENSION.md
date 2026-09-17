@@ -23,6 +23,88 @@ They are not asking you to rewrite the PR or prove LeetCode fluency. They are te
 
 ---
 
+## 0.5 Research: questions / prompts reported so far
+
+**Honest finding:** There is **no public dump of the exact PR** used in Nate’s “PR Review and Code Comprehension” round. Candidates do not leak the live PR the way they leak LeetCode prompts. What *is* documented:
+
+### A. Confirmed from Nate’s email (this exact round)
+
+Discussion topics they say may come up:
+- Refactoring
+- API design
+- Testing strategy
+- Readability
+- Reliability / security
+
+Behavioral themes they flag:
+- Incident ownership
+- Disagreeing with reviewers
+- Mentoring
+
+### B. Turing vetting MCQ (code-review style) — widely leaked
+
+From `vetting-engine.turing.com` Python MCQs, the recurring item:
+
+> Given `found_it(nums, looking_for)` that does `for i, x in enumerate(nums)` and returns `True` if found — **What is/are the best code review comment(s)?** (select all that apply)
+>
+> Options typically include:
+> - Unused variable `i` adds technical debt
+> - Need text comments because readability is poor
+> - Runtime can be improved with a better search algorithm
+> - Cannot unit-test with PyTest
+
+**What they’re testing:** judgment about which comments are *valid* vs noise (unused vars / algorithm vs “must add comments” / “untestable”).
+
+### C. Reported Turing live / tech-interview questions (Glassdoor, LinkedIn, Reddit)
+
+These are from Turing vetting / stack interviews — **not always the PR-review round**, but they show what Turing interviewers actually ask:
+
+**GitHub / PR workflow**
+- How do you create a PR from branch creation to merge?
+- Someone pushed directly to `master` and it’s already merged — what do you do?
+
+**Code quality / review behavior**
+- How do you approach code reviews and ensure code quality?
+- What are your strategies for ensuring code quality and maintainability?
+- How do you handle technical debt?
+- How do you balance shipping fast vs code quality?
+- How do you mentor junior engineers? / Tell me about mentoring
+
+**Security / reliability (common follow-ups when reviewing code)**
+- Your JS app is flagged for security vulnerabilities — what measures would you take?
+- How do you prevent security vulnerabilities in a JS app?
+- Authentication and session management after logout?
+- Web security / JWT / APIs (reported in Turing Soft Dev Glassdoor)
+
+**Stack / comprehension adjacent**
+- Python internals: decorators, generators, threading, deep vs shallow copy, pickle
+- TypeScript: debug bad type inference; write a user-profile interface
+- Docker: containerize Node for multiple envs; image versioning; GitHub Actions + Docker CI
+- DSA coding still appears in other Turing rounds (arrays/strings, max subarray, reverse linked list, etc.)
+
+### D. Seeded-bug patterns from public “code review interview” writeups
+
+These are **not Turing-branded leaks**, but they match Nate’s format (hand you a PR, discuss bugs/design/tests/security). Highest-signal seeded issues candidates are expected to catch:
+
+| Pattern | Example |
+|---|---|
+| AuthZ / IDOR | Client `isInternal` flag bypasses ownership; wallet/order ID of another user |
+| User enumeration | Different responses for unknown vs known email |
+| Unthrottled side effects | Resend-email / notify endpoint as spam cannon |
+| Broken rate limiter | Window never resets because rejected requests rewrite timestamp |
+| Non-atomic money / state | Update status then debit; crash mid-way |
+| Race / TOCTOU | Check balance then reduce without conditional update |
+| Deploy-order hazard | Migration drops column while old instances still read it |
+| Missing / weak tests | Only happy path; no authz/replay/concurrency tests |
+| N+1 / unbounded input | Loop queries; `limit=1000` default |
+| Nit bait | Naming / `console.log` — strong candidates deprioritize these |
+
+### E. What this means for you
+
+Prepare for: **one seeded PR** + discussion of the topics in §A + 1–2 behavioral from Nate’s list. Do **not** expect a memorized LeetCode ID. Expect to be scored on **severity ranking, fix quality, test suggestions, and tone** — not bug count.
+
+---
+
 ## 1. Timebox for the 50-minute exercise
 
 Use this clock. Interviewers notice structured pacing.

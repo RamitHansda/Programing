@@ -52,3 +52,9 @@ Founding Eng/Lead @ Skydo: payments+settlement (10K+/day), idempotency/recon/loc
 
 ## Avoid
 Style-only reviews · vague “cleaner” · silent full rewrite · ignoring authz while debating names · “exactly-once” handwave
+
+## Reported so far (research)
+**Nate’s round topics:** refactoring, API design, testing, readability, reliability/security · behavioral: incident ownership, disagreeing with reviewers, mentoring  
+**Turing MCQ:** `found_it` + “best code review comment(s)” (unused `i`, algorithm, comments?, pytest?)  
+**Turing live (related):** create/merge PR; force-push to master recovery; “how do you approach code reviews?”; JS security; auth session logout; Docker/GHA; TS interfaces  
+**No public leak of the exact live PR** — practice seeded-bug patterns (authz, races, non-atomic side effects, deploy-order, missing tests)
