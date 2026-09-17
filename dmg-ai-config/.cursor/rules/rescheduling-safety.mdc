@@ -1,0 +1,16 @@
+---
+description: Rescheduling / cascade safety patterns
+globs:
+  - "**/*Schedul*"
+  - "**/*Reschedul*"
+  - "**/*Cascade*"
+  - "**/*Conflict*"
+---
+
+# Rescheduling safety
+
+- Every conflict resolution path needs an explicit budget (max depth, max mutations, or deadline).
+- Re-entry with the same disruption id must be idempotent.
+- Freezes/overrides are first-class; never "optimize them away."
+- Persist reason codes for mutations; support engineers need explainability.
+- Prefer shadow/compare modes before changing production schedule selection.
