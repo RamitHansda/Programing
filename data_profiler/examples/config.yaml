@@ -1,0 +1,44 @@
+# Example profiler configuration
+#
+# data-profiler --engine sqlite --database demos/data/demo.sqlite \
+#   --config examples/config.yaml -o out.json
+
+profiler:
+  sample_size: 100000             # rows scanned for min/max/null stats
+  sample_percent: null
+  stats_depth: basic              # basic | full
+  histogram_buckets: 10
+  max_histogram_columns: 20       # cost governor for stats_depth=full
+  distinct_scope: table           # table | sample — see DESIGN.md
+  concurrency: 4                  # honored when adapter.supports_concurrent_profiling
+  prefetch_catalog: true          # bulk information_schema reads
+  max_tables: null
+  include_schemas: []
+  exclude_schemas: [INFORMATION_SCHEMA, information_schema]
+  include_tables: []
+  exclude_tables: []
+  estimate_row_counts: true       # Snowflake INFORMATION_SCHEMA.TABLES.ROW_COUNT
+  skip_exact_count_when_sampling: false
+  timeout_seconds_per_table: 120  # wall-clock budget; in-flight query is cancelled
+  max_retries: 1                  # transient warehouse errors
+  resume_state_path: .profiler_state.json
+  output_format: json             # json | yaml | parquet
+  fail_fast: false
+
+connection:
+  # sqlite / duckdb:
+  # database: demos/data/demo.sqlite
+
+  # snowflake: prefer env vars (SNOWFLAKE_*) for secrets
+  # account: xy12345.us-east-1
+  # user: profiler_user
+  # warehouse: COMPUTE_WH
+  # database: ANALYTICS
+  # schema: PUBLIC
+  # role: PROFILER_ROLE
+
+  # databricks: prefer env vars (DATABRICKS_*)
+  # server_hostname: adb-xxxx.azuredatabricks.net
+  # http_path: /sql/1.0/warehouses/abcd
+  # catalog: main
+  # schema: default
