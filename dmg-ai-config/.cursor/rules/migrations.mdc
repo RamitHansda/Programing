@@ -1,0 +1,14 @@
+---
+description: Schema and migration safety
+globs:
+  - "**/migrations/**"
+  - "**/*Migration*"
+  - "**/db/**"
+---
+
+# Migrations
+
+- Expand/contract only. Never deploy a migration that requires old and new code to cut over in the same release unless explicitly approved.
+- Prefer additive columns with backfill plans; document dual-write windows.
+- Destructive changes require a follow-up PR after readers are gone.
+- Include a rollback note (what is safe vs irreversible).
