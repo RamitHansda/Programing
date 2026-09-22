@@ -222,13 +222,31 @@ For each: timer on, working demo first, then one extension (“add priority orde
 
 ---
 
-## 8. Bottom line
+## 8. Rippling (similar LLD + coding round — different problem surface)
+
+Rippling runs the same *style* of round (OOP + working code + extensibility), but prompts are **payroll / expense / HR-domain**, not Parking Lot or quick-commerce OMS.
+
+**Most reported Rippling LLD/coding questions:**
+
+1. **Delivery cost / driver payroll dashboard** — `addDriver`, `recordDelivery`, `getTotalCost`, then `payUpTo` + unpaid, then max simultaneous drivers in 24h (sweep line)
+2. **Expense / corporate-card rules engine** — per-expense rules, then trip-level aggregates; Strategy/OCP; discuss return type first
+3. **Generic groupBy / filter / aggregate** on employee records
+4. **2D canvas** draw/move rectangles (bounded → infinite sparse grid)
+5. **Task scheduler** — dedupe, priority sort, parent-child ordering (AI sometimes allowed)
+6. **Document analyzer**, **configurable logger**, music analytics (unique listeners)
+
+Full Rippling writeup with APIs and practice plan: [`RIPPLING_LLD_CODING_QUESTIONS.md`](./RIPPLING_LLD_CODING_QUESTIONS.md).
+
+---
+
+## 9. Bottom line
 
 There is **no fixed question bank** for “Problem Solving, LLD and Coding (90 Mins)” — companies rotate prompts. Public reports cluster heavily around:
 
 1. **Order / inventory / fulfillment state machines** (especially quick commerce)  
 2. **Parking Lot / games / elevators / booking systems**  
 3. **Fintech: payments, wallets, Splitwise**  
-4. **Infra primitives: cache, rate limiter, scheduler, file system**
+4. **Infra primitives: cache, rate limiter, scheduler, file system**  
+5. **Rippling-style:** payroll cost, expense rules, groupBy, schedulers
 
-Prepare the **framework** in the prep guide; drill the **order+inventory** family hardest; keep 4–5 classics timed and demo-ready. Do not bet the round on memorizing one PDF example.
+Prepare the **framework** in the prep guide; drill the **order+inventory** family for general 90-min rounds; if the company is **Rippling**, switch priority to **delivery payroll + expense rules**. Do not bet the round on memorizing one PDF example.
