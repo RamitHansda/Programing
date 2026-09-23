@@ -2,6 +2,8 @@
 
 Companion to [LLD Problems by Design Pattern](LLD_PROBLEMS_BY_DESIGN_PATTERN.md). For each pattern: **when to use it** and **multiple examples** so you can recognize the right pattern in interviews and production.
 
+**Interview-first:** [lld/LLD_DESIGN_PATTERNS_INTERVIEW_GUIDE.md](lld/LLD_DESIGN_PATTERNS_INTERVIEW_GUIDE.md) · [day-of cheatsheet](lld/LLD_DESIGN_PATTERNS_DAYOF_CHEATSHEET.md).
+
 ---
 
 ## Creational Patterns
