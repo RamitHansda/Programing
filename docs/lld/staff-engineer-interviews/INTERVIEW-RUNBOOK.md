@@ -58,6 +58,8 @@ If coding is required, **compress** model to 10 minutes and shift 10 minutes to 
 - **God Manager** with all logic and DTO entities.
 - Silent **double booking**, **negative balance**, **negative tokens**, or **overshoot** on limits.
 
+Patterns mid-round: name the **plug-in seam** (Strategy/State/Observer), not a catalog. Day-of: [../LLD_DESIGN_PATTERNS_DAYOF_CHEATSHEET.md](../LLD_DESIGN_PATTERNS_DAYOF_CHEATSHEET.md).
+
 ## If they push “production”
 
 Acknowledge in one minute: **persistence**, **leader election**, **Redis**, **outbox**, **metrics**—then say which part you would still **LLD in Java** (domain + service + ports) vs **HLD** (sharding, SLO). Do not derail the whole round into Kafka unless they ask.

@@ -42,6 +42,8 @@ This folder is **interview-ready**: every problem guide opens with a **timeboxed
 
 ## Related material in this repo
 
+- **How to use patterns in LLD rounds:** [../LLD_DESIGN_PATTERNS_INTERVIEW_GUIDE.md](../LLD_DESIGN_PATTERNS_INTERVIEW_GUIDE.md)
+- **Day-of patterns cheatsheet:** [../LLD_DESIGN_PATTERNS_DAYOF_CHEATSHEET.md](../LLD_DESIGN_PATTERNS_DAYOF_CHEATSHEET.md)
 - Pattern-to-problem catalog: [../../LLD_PROBLEMS_BY_DESIGN_PATTERN.md](../../LLD_PROBLEMS_BY_DESIGN_PATTERN.md)
 - Pattern usage notes: [../../DESIGN_PATTERNS_WHEN_TO_USE_AND_EXAMPLES.md](../../DESIGN_PATTERNS_WHEN_TO_USE_AND_EXAMPLES.md)
 - Deeper dives elsewhere under `docs/lld/` (Splitwise, train booking, connection pool, etc.)—this playbook is **interview-shaped**; those folders may go deeper on one domain.

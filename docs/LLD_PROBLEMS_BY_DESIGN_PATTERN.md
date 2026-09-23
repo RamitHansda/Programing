@@ -2,6 +2,8 @@
 
 One LLD (Low-Level Design) problem per design pattern. Use these for interview prep or to practice applying patterns in real scenarios.
 
+**Interview-first:** [lld/LLD_DESIGN_PATTERNS_INTERVIEW_GUIDE.md](lld/LLD_DESIGN_PATTERNS_INTERVIEW_GUIDE.md) · [day-of cheatsheet](lld/LLD_DESIGN_PATTERNS_DAYOF_CHEATSHEET.md).
+
 ---
 
 ## Creational Patterns

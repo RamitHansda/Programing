@@ -2,6 +2,8 @@
 
 Staff-level Java implementations for the [LLD Problems by Design Pattern](../../../docs/LLD_PROBLEMS_BY_DESIGN_PATTERN.md) doc. Each package corresponds to one pattern and one problem.
 
+**Interview guide / day-of:** [LLD Design Patterns Interview Guide](../../../docs/lld/LLD_DESIGN_PATTERNS_INTERVIEW_GUIDE.md) · [Day-of Cheatsheet](../../../docs/lld/LLD_DESIGN_PATTERNS_DAYOF_CHEATSHEET.md).
+
 ## Layout
 
 | Pattern | Package | Entry / Main types |
