@@ -2,15 +2,15 @@
 
 ## Interview-ready snapshot
 
-**Say first (≈30s):** **Composite** `Node` tree: directories own children; **Path** value for parsing/normalization; move/delete enforce **no cycles**; `FileSystem` façade over root.
+**Say first (≈30s):** **Composite** `Node` tree: directories own children; **Path** value for parsing/normalization (`.` / `..`); façade tracks **cwd** for `cd`/`pwd`; move/delete enforce **no cycles**; `FileSystem` over root.
 
 **Default assumptions:** Absolute paths first; single-threaded or RW-lock unless they want fine-grained.
 
 | Phase | ~Time | Deliver |
 |-------|------|---------|
-| Align | 5 min | `..` and `.`; symlinks in or out; concurrent edits. |
-| Model | 10 min | Node, File, Directory, Path; parent pointers. |
-| API + flow | 10 min | mkdir, create, write, read, delete, move flows. |
+| Align | 5 min | cwd / `cd`? `..` and `.`; symlinks in or out; concurrent edits. |
+| Model | 10 min | Node, File, Directory, Path; parent pointers; cwd. |
+| API + flow | 10 min | cd/pwd, mkdir, create, write, read, delete, move flows. |
 | Hard | 10 min | Cycle check on move; traversal iterator; locking scope. |
 | Close | 5 min | Hardlinks/inodes as extension. |
 
@@ -34,9 +34,12 @@ Design an **in-memory** hierarchical file system supporting paths, directories, 
 
 ## Functional requirements
 
+- `cd(path)`, `pwd()` — cwd + relative paths (`.`, `..`); reject file / missing targets
 - `mkdir`, `createFile`, `write`, `read`, `delete`, `move(src, dst)`
 - `ls(path)` listing
 - Optional: `find(name)` / glob (timeboxed)
+
+**Reference implementation:** `src/main/java/lld/filesystem/` (+ `docs/lld/filesystem/README.md`).
 
 ## Non-functional requirements
 

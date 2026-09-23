@@ -33,7 +33,7 @@ This folder is **interview-ready**: every problem guide opens with a **timeboxed
 | 7 | In-process cache | Strategy, optional Decorator | [07-cache-eviction.md](./07-cache-eviction.md) |
 | 8 | Movie seat booking | State, Saga-style compensation (conceptual) | [08-movie-seat-booking.md](./08-movie-seat-booking.md) |
 | 9 | Notification dispatcher | Strategy, Observer / event bus | [09-notification-dispatcher.md](./09-notification-dispatcher.md) |
-| 10 | In-memory file system | Composite, Iterator | [10-in-memory-filesystem.md](./10-in-memory-filesystem.md) |
+| 10 | In-memory file system | Composite, Iterator; `cd`/`pwd` | [10-in-memory-filesystem.md](./10-in-memory-filesystem.md) · [impl](../filesystem/README.md) |
 | 11 | Chess / board game | Strategy, Template Method, Memento | [11-chess-board-game.md](./11-chess-board-game.md) |
 | 12 | Meeting scheduler | Strategy, domain services, value objects | [12-meeting-scheduler.md](./12-meeting-scheduler.md) |
 | 13 | Shopping cart / checkout | Builder, Strategy, Saga (conceptual) | [13-shopping-cart-checkout.md](./13-shopping-cart-checkout.md) |
