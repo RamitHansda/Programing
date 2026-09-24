@@ -1,0 +1,23 @@
+# Canonical dependency metadata lives in pyproject.toml; this file mirrors it
+# for environments that install from a plain requirements list.
+#
+#   pip install -e ".[dev]"        # library + test/lint tooling
+#   pip install -e ".[snowflake,databricks,parquet]"
+
+# Core
+pyyaml>=6.0
+duckdb>=1.0.0
+
+# Optional cloud connectors (install when credentials are available)
+# snowflake-connector-python>=3.6.0
+# databricks-sql-connector>=3.0.0
+
+# Optional Parquet output
+# pyarrow>=14.0.0
+
+# Dev / test
+pytest>=8.0
+pytest-cov>=5.0
+jsonschema>=4.0
+sqlglot>=25.0
+ruff>=0.5
