@@ -50,6 +50,8 @@ Evaratus = enterprise/consumer workflow data + **RL gyms** + expert network → 
 ---
 
 ## Design spine (draw this)
+**Full drill:** [`SCALER-AI-LABS-SYSTEM-DESIGN-DRILL.md`](./SCALER-AI-LABS-SYSTEM-DESIGN-DRILL.md) · **1-pager:** [`SCALER-AI-LABS-SYSTEM-DESIGN-DAYOF.md`](./SCALER-AI-LABS-SYSTEM-DESIGN-DAYOF.md)
+
 **Task Spec → Gym Runtime → Trajectory → Verifier stack → Eval Gate (baseline vs candidate → Δ uplift)**
 
 Verifiers: deterministic → rubric → LLM judge → expert sample  

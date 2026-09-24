@@ -160,9 +160,13 @@ Exact internal agenda may not be on the calendar — **ask Pranav in the first 5
 
 **Practice set (morning skim):** sliding window / deque; topological order (tool dependency); try/retry with backoff; rate limiter; LRU; parse structured logs; “tail -n” style streaming; interval merge; BFS shortest path with constraints.
 
-### B. System design (see Section 5)
+### B. System design (see Section 5 + drill pack)
 
 Lead with **problem framing for RL/evals**, not a generic chat-app design. Ask: who is the agent? what is a step? what is success? how do we verify? what’s held-out?
+
+**Dedicated prep (use this for the round):**
+- Drill pack: [`SCALER-AI-LABS-SYSTEM-DESIGN-DRILL.md`](./SCALER-AI-LABS-SYSTEM-DESIGN-DRILL.md)
+- Day-of 1-pager: [`SCALER-AI-LABS-SYSTEM-DESIGN-DAYOF.md`](./SCALER-AI-LABS-SYSTEM-DESIGN-DAYOF.md)
 
 ### C. Resume deep-dive
 
