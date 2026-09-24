@@ -485,12 +485,37 @@ Prepare gold annotations (JSON) for at least one document (or a synthetic fixtur
 }
 ```
 
-Metrics (document formulas in `evaluation/report.md`):
+### Precision & recall targets
 
-- **Precision** = TP / (TP + FP)  
-- **Recall** = TP / (TP + FN)  
+**Status:** These are **targets**, not measured results. No production/gold evaluation has been run yet — report actual numbers in `evaluation/report.md` after labeling and scoring.
+
+**Formulas** (entity-span level; same type + match policy below):
+
+- **Precision** = TP / (TP + FP) — of predicted PII spans, how many are correct  
+- **Recall** = TP / (TP + FN) — of gold PII spans, how many were found  
+
+Match policy: prefer **span overlap IoU ≥ 0.5** + same type, or exact boundary match; state which in the eval report.
+
+| PII type | Target precision | Target recall | Notes |
+|---|---|---|---|
+| `EMAIL` | ≥ 0.98 | ≥ 0.98 | regex; well-formed addresses |
+| `PHONE` | ≥ 0.95 | ≥ 0.95 | regex + optional `phonenumbers` |
+| `SSN` | ≥ 0.98 | ≥ 0.95 | hyphenated / digit pattern |
+| `CREDIT_CARD` | ≥ 0.99 | ≥ 0.95 | Luhn-validated |
+| `PAN` | ≥ 0.97 | ≥ 0.95 | format `ABCDE1234F` |
+| `AADHAAR` | ≥ 0.95 | ≥ 0.90 | Verhoeff + context |
+| `IP_ADDRESS` | ≥ 0.98 | ≥ 0.98 | IPv4 / IPv6 regex |
+| `DOB` | ≥ 0.90 | ≥ 0.90 | context-dependent (not all dates) |
+| `PERSON` | ≥ 0.90 | ≥ 0.85 | NER bottleneck |
+| `ORG` | ≥ 0.85 | ≥ 0.80 | NER + company context |
+| `ADDRESS` | ≥ 0.85 | ≥ 0.80 | NER LOCATION + address cues |
+| **Overall (micro)** | **≥ 0.95** | **≥ 0.95** | user goal ~95%; structured types pull this up |
+
+Assignment asks for precision / recall / accuracy in the evaluation report; it does **not** prescribe numeric thresholds — the table above is the project bar for regex + local NER (no LLM). Structured regex types should beat NER types; micro-average ~0.95 is achievable when EMAIL/PHONE/SSN/CC/PAN/IP dominate the gold set.
+
+Also document in `evaluation/report.md`:
+
 - Per-type and overall (micro-average) — include `PAN` and `AADHAAR` rows.  
-- Match policy: prefer **span overlap IoU ≥ 0.5** + same type, or exact boundary match; state which.  
 - Call out false positives (over-redaction of order IDs as Aadhaar/PAN) and false negatives (missed names/addresses/Aadhaar) in README/report.
 
 ### 9.3 Definition of done
