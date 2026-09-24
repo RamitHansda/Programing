@@ -4,6 +4,8 @@ Notes from [Andrej Karpathy — Deep Dive into LLMs like ChatGPT](https://www.yo
 
 These notes follow the video’s arc: how raw internet text becomes a base model, how that becomes a chat assistant, and how reinforcement learning improves reasoning and preference alignment.
 
+For a mechanics-first walkthrough of what happens inside the model at runtime (embeddings, attention, MLP, sampling, KV cache), see [HOW-LLMS-WORK-UNDER-THE-HOOD.md](./HOW-LLMS-WORK-UNDER-THE-HOOD.md).
+
 ---
 
 ## Table of contents
