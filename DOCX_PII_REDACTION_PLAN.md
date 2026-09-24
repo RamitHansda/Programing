@@ -526,7 +526,7 @@ Also document in `evaluation/report.md`:
 - **PAN** detected via `\b[A-Z]{5}[0-9]{4}[A-Z]\b` (example `ABCDE1234F`), mapped uppercase, faked consistently.  
 - **AADHAAR** detected with Verhoeff and/or context, digits-only canonical key, faked consistently.  
 - Gold eval + report include **PAN** and **AADHAAR** rows.  
-- README + evaluation numbers present.  
+- README + evaluation numbers present (compare measured P/R to [Precision & recall targets](#precision--recall-targets); overall micro ≥ 0.95 is the user goal).  
 - `pytest` passes on unit tests (incl. PAN + Aadhaar + Verhoeff cases).
 
 ---
