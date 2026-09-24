@@ -2,6 +2,8 @@
 
 This document is the **full implementation brief**. A Cursor agent should implement the project from this file alone. Do not wait for further approval.
 
+**India PII included:** **PAN** (`ABCDE1234F`) and **Aadhaar** — see [India identifiers: PAN and Aadhaar](#india-identifiers-pan-and-aadhaar).
+
 ---
 
 ## Constraints (hard requirements)
@@ -32,6 +34,23 @@ Minimum PII types to detect and replace:
 - **PAN** (India Permanent Account Number)  
 - **Aadhaar** (India UID)  
 
+### India identifiers: PAN and Aadhaar
+
+**Ctrl+F targets:** `PAN` · `Aadhaar` · `AADHAAR` · `Permanent Account` · `ABCDE1234F`
+
+India **PAN** and **Aadhaar** are **first-class PII types** (same priority as email/SSN/CC). They must appear in detectors, mapping, fakes, eval gold, and the Definition of Done.
+
+| Identifier | Type id | Example format | Regex / validation |
+|---|---|---|---|
+| **PAN** (Permanent Account Number) | `PAN` | `ABCDE1234F` | `\b[A-Z]{5}[0-9]{4}[A-Z]\b` (case-insensitive detect → uppercase canonical) |
+| **Aadhaar** (UID) | `AADHAAR` | `1234 5678 9012` | 12 digits (optional spaces/dashes) + **Verhoeff** and/or context (`Aadhaar` / `Aadhar` / `UID` / `आधार`) |
+
+Quick rules:
+
+- **PAN** ≠ credit-card “PAN”; ≠ 10-char ticket/order codes unless the strict PAN regex matches (prefer `PAN` / `Permanent Account Number` context).  
+- **Aadhaar** ≠ arbitrary 12-digit order/invoice IDs without Verhoeff and/or Aadhaar context.  
+- Details: §4.1–§4.4 (types + regex), §5 (canonical keys), §6 (fake generators), §9 (eval + checklist).
+
 Assignment deliverables (implement toward these):
 
 1. Redaction script (source)  
@@ -48,11 +67,11 @@ Assignment deliverables (implement toward these):
 Build a local, offline-capable CLI that:
 
 1. Reads one or more Word (`.docx`) ticket-log / prospectus-style documents.  
-2. Detects PII with **regex + Presidio/spaCy NER + context heuristics** (no cloud LLM).  
-3. Replaces each distinct PII value with a **stable fake** of the same type.  
+2. Detects PII with **regex + Presidio/spaCy NER + context heuristics** (no cloud LLM) — including India **PAN** (`ABCDE1234F`) and **Aadhaar**.  
+3. Replaces each distinct PII value with a **stable fake** of the same type (custom generators for **PAN** / **AADHAAR**).  
 4. Writes redacted `.docx` files preserving structure as much as practical.  
-5. Persists a shared mapping so multi-file / re-runs stay consistent.  
-6. Ships evaluation helpers and a short README suitable for the assignment.
+5. Persists a shared mapping so multi-file / re-runs stay consistent (same **PAN** / **Aadhaar** → same fake).  
+6. Ships evaluation helpers and a short README suitable for the assignment (gold labels include **PAN** and **AADHAAR**).
 
 ### Non-goals
 
@@ -143,7 +162,7 @@ Each detector emits spans: `{start, end, type, text, source, confidence}`.
 
 ### 4.1 Canonical PII types
 
-Use these string ids everywhere (mapping, detectors, eval):
+Use these string ids everywhere (mapping, detectors, eval). **Must include `PAN` and `AADHAAR`** (see [India identifiers: PAN and Aadhaar](#india-identifiers-pan-and-aadhaar)):
 
 | Type id | Examples |
 |---|---|
@@ -153,11 +172,11 @@ Use these string ids everywhere (mapping, detectors, eval):
 | `ORG` | Company / employer names |
 | `ADDRESS` | Street + city/state/zip style |
 | `SSN` | `123-45-6789` |
-| `CREDIT_CARD` | 13–19 digit card numbers (Luhn-checked). Not India PAN. |
+| `CREDIT_CARD` | 13–19 digit card numbers (Luhn-checked). **Not** India **PAN**. |
 | `DOB` | Dates of birth (not arbitrary dates unless context says DOB) |
 | `IP_ADDRESS` | IPv4 / IPv6 |
-| `PAN` | India Permanent Account Number, e.g. `ABCDE1234F` |
-| `AADHAAR` | India UID, e.g. `1234 5678 9012` (12 digits) |
+| `PAN` | India **PAN** / Permanent Account Number — format `ABCDE1234F` |
+| `AADHAAR` | India **Aadhaar** UID — format `1234 5678 9012` (12 digits) |
 
 ### 4.2 Regex detectors (implement first; high precision)
 
@@ -478,10 +497,12 @@ Metrics (document formulas in `evaluation/report.md`):
 
 - CLI redacts multiple docx with shared mapping.  
 - No LLM API usage anywhere in code paths.  
-- Ticket/order IDs left intact unless PII-pattern match (incl. validated PAN/Aadhaar).  
-- `PAN` and `AADHAAR` detected, mapped consistently, and evaluated.  
+- Ticket/order IDs left intact unless PII-pattern match (incl. validated **PAN** / **Aadhaar**).  
+- **PAN** detected via `\b[A-Z]{5}[0-9]{4}[A-Z]\b` (example `ABCDE1234F`), mapped uppercase, faked consistently.  
+- **AADHAAR** detected with Verhoeff and/or context, digits-only canonical key, faked consistently.  
+- Gold eval + report include **PAN** and **AADHAAR** rows.  
 - README + evaluation numbers present.  
-- `pytest` passes on unit tests.
+- `pytest` passes on unit tests (incl. PAN + Aadhaar + Verhoeff cases).
 
 ---
 
