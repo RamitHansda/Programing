@@ -1,7 +1,38 @@
 # Scaler AI Labs / Evaratus — Day-of Cheat Sheet
-**Full-day Bangalore onsite**
+**Thu 24 Sept 2026 · 12:00–18:00 IST · TODAY**
 
-> Same company if badge says **Evaratus**. Not Scalar Labs (Polaris).
+---
+
+## Logistics (do this first)
+| | |
+|---|---|
+| **When** | Thu 24 Sept 2026 · **12:00 – 18:00 IST** |
+| **Where** | **Scaler School of Technology** · Electronic City, Bengaluru |
+| **Address** | 14, 3rd Cross, Parappana Agrahara, Electronic City Rd, Electronics City Phase 1, Bengaluru **560100** |
+| **Also listed as** | Surya Park II (same campus / InterviewBit–Scaler Bang office) |
+| **Host** | **Pranav TR** · pranav.tr@scalerailabs.com (coord / Founder’s Office–side; not necessarily your coding interviewer) |
+| **You** | ramit.ju.cse@gmail.com |
+| **Arrive** | **11:40** at gate (security + find host). Electronic City traffic — leave home by **10:30–11:00** depending on start point |
+| **Bring** | Laptop + charger, notebook, water, ID, phone silent, this cheatsheet |
+| **Reply** | Calendar → **Yes** if not already |
+
+> Badge may say **Evaratus** or Scaler AI Labs — same company. Not Scalar Labs (Polaris).
+
+---
+
+## Suggested 12:00–18:00 rhythm
+*(Exact slots unknown — follow their agenda; use this for energy.)*
+
+| Time | Likely | You |
+|---|---|---|
+| 12:00–12:20 | Pranav welcome / agenda / culture | Warm, curious; 90-sec open if asked |
+| 12:20–13:20 | Coding / problem-solving | Clarity > clever; narrate |
+| 13:20–14:00 | Lunch / informal | Interview continues — no Skydo rant |
+| 14:00–15:15 | System design (gym / eval) | Draw the spine below |
+| 15:15–16:15 | Resume deep-dive (copilot / payments) | Numbers ready |
+| 16:15–17:15 | LLD / live modify / 2nd tech | Interfaces, not rewrites |
+| 17:15–17:50 | HM / senior / culture | High agency + uplift mindset |
+| 17:50–18:00 | Your Qs + wrap | 3 sharp questions; thank Pranav |
 
 ---
 
@@ -15,11 +46,6 @@ Evaratus = enterprise/consumer workflow data + **RL gyms** + expert network → 
 
 ---
 
-## Day energy
-Morning coding/clarity · Mid design (whiteboard) · Afternoon deep-dive voice · Lunch = interview · Ask 3 sharp questions · Water
-
----
-
 ## Design spine (draw this)
 **Task Spec → Gym Runtime → Trajectory → Verifier stack → Eval Gate (baseline vs candidate → Δ uplift)**
 
@@ -28,11 +54,7 @@ Must name: **reward hacking · fidelity tiers · held-out contamination · flaky
 
 Bridge: “Skydo copilot inverted — real tickets+HITL vs gym+verifier; product is trust.”
 
----
-
-## Fidelity tiers
-mock → recorded replay → live sandbox → prod shadow  
-Train cheap · certify expensive
+Fidelity: mock → recorded replay → live sandbox → prod shadow · Train cheap · certify expensive
 
 ---
 
@@ -50,7 +72,7 @@ Train cheap · certify expensive
 ## Coding protocol
 Restate → examples → brute→better → code → tests (empty/edge/large) → complexity
 
-Warm: sliding window · topo sort · rate limit · LRU · BFS+constraint · parse/stream · intervals · retry/backoff
+Warm (45 min before leave): sliding window · topo sort · rate limit · LRU · BFS+constraint · parse/stream · intervals · retry/backoff
 
 ---
 
@@ -74,14 +96,21 @@ High agency · measure uplift not demos · research+prod · hire builders · com
 2. Biggest false signal: flake / weak verifier / contamination?  
 3. 6-mo success for this seat?  
 4. Partner labs consume what artifacts?  
-5. Bangalore ownership vs SF/research?
+5. How Bangalore eng pairs with SF / frontier lab partners?
+
+**To Pranav (if natural):** What does a strong full-day candidate look like here? How is the AI Labs / SST campus collab set up day-to-day?
 
 ---
 
 ## Avoid
-Prompt-co · fine-tune-everything · LLM-judge = truth · exactly-once handwave · trash Scaler edtech · confuse with Scalar Labs · EM-only if room is IC
+Prompt-co · fine-tune-everything · LLM-judge = truth · exactly-once handwave · trash Scaler edtech/SST · confuse with Scalar Labs · EM-only if room is IC · late arrival
 
 ---
 
 ## Metrics card
 10K+ txn/d · 65% triage · 35–40% resolve · 90→10 FRT · SLA −50% · incidents −30% · GS −40/−25/3× · Moneyview 5M+/mo · ISO/SOC2
+
+---
+
+## After 18:00
+Same-day thank-you to **pranav.tr@scalerailabs.com** — 2 concrete technical takeaways from the day + appreciation for hosting.

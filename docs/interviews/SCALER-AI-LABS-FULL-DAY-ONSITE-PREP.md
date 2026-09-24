@@ -1,7 +1,15 @@
 # Scaler AI Labs (Evaratus) — Full-Day Onsite Interview Prep
-**Ramit Hansda · Bangalore office · Full-day loop**
+**Ramit Hansda · Scaler School of Technology · Thu 24 Sept 2026 · 12:00–18:00 IST**
 
-> **Naming:** People still say “Scaler AI Labs” / “Scalar AI Lab.” The product company is now **Evaratus** ([evaratus.com](https://evaratus.com/)). Email domain still uses `scalerailabs.com`. If a badge or deck says Evaratus, same company — don’t look confused.
+> **Confirmed invite**
+> - **When:** Thursday 24 Sept 2026 · **12:00 – 18:00** (IST / Kolkata)
+> - **Where:** **Scaler School of Technology**, Electronic City, Bengaluru  
+>   14, 3rd Cross, Parappana Agrahara, Electronic City Rd, Electronics City Phase 1, Bengaluru **560100**
+> - **Organiser / host:** **Pranav TR** · pranav.tr@scalerailabs.com  
+>   Likely coordinating / Founder’s Office–adjacent (has posted Scaler AI Labs hiring). Treat him as host + culture signal; technical interviewers may be separate.
+> - **Guest:** ramit.ju.cse@gmail.com · reply **Yes** on the invite if not done
+
+> **Naming:** People still say “Scaler AI Labs” / “Scalar AI Lab.” The product company is now **Evaratus** ([evaratus.com](https://evaratus.com/)). Email domain still uses `scalerailabs.com`. If a badge or deck says Evaratus, same company — don’t look confused. SST campus = where AI Labs / Scaler collocate for this loop.
 >
 > **Not the same as:** [Scalar Labs](https://scalarlab.co/) (Polaris / family-office applied-intelligence studio). Different entity. This pack is for **Scaler AI Labs → Evaratus**.
 
@@ -9,10 +17,10 @@
 
 ## How to use this
 
-1. Skim Sections 1–3 night before (company + pitch + day map).
-2. Drill Section 5 (RL gym / eval HLD) once out loud with a whiteboard.
-3. Rehearse 4 STAR stories in Section 7 — don’t invent new ones day-of.
-4. Morning of: print/open the day-of cheatsheet only.
+1. **Now (~morning of):** skim Sections 1–3 + this logistics block; drill Section 5 once on paper.
+2. Rehearse 4 STAR stories in Section 7 out loud (10 min).
+3. **Leave for Electronic City by 10:30–11:00** → arrive gate **~11:40**.
+4. From 11:40 onward: **day-of cheatsheet only** — don’t open this long doc.
 
 ---
 
@@ -107,22 +115,25 @@ Default if unclear: **IC depth first, leadership as amplifier** — this company
 
 ---
 
-## 3. Likely full-day structure
+## 3. Full-day structure (12:00–18:00 IST · this invite)
 
-Full-day Bangalore onsites for senior AI/platform roles usually look like this. Exact schedule may vary — ask recruiter night before and rewrite times on the cheatsheet.
+Exact internal agenda may not be on the calendar — **ask Pranav in the first 5 minutes for the rundown**, then adapt. Default energy map for a 6-hour SST onsite:
 
-| Block | Typical length | What they’re testing |
-|---|---|---|
-| Welcome / agenda / culture intro | 15–30m | Energy, curiosity, why here |
-| Coding / problem-solving | 45–60m | Clarity, correctness, communication under pressure |
-| System design (gym / eval / agent platform) | 60–75m | Architecture judgment for *their* domain |
-| Deep dive on your work (agentic / payments) | 45–60m | Real ownership vs resume inflation |
-| LLD or live extension (“change this design”) | 45–60m | Code taste, APIs, state machines |
-| HM / leadership / founder | 30–45m | Ownership, pace, culture fit |
-| Team lunch / informal | — | Are you someone they want in the room |
-| Your questions + wrap | 15–20m | Signal quality |
+| Time (IST) | Likely block | What they’re testing | Your move |
+|---|---|---|---|
+| 11:40 | Arrive / security / find Pranav | Professionalism | Early, calm, laptop charged |
+| 12:00–12:20 | Welcome / agenda (Pranav) | Energy, why here | 90-sec open if invited |
+| 12:20–13:20 | Coding / problem-solving | Clarity under pressure | Protocol: restate → brute → better → tests |
+| 13:20–14:00 | Lunch / campus walk | Culture fit | Lunch = still interview |
+| 14:00–15:15 | System design (gym / eval / agent) | Domain architecture | Section 5 spine on whiteboard |
+| 15:15–16:15 | Resume deep-dive | Ownership depth | Copilot + payments numbers |
+| 16:15–17:15 | LLD / live modify / 2nd tech | Interfaces, taste | “Change this” calmly |
+| 17:15–17:50 | HM / senior / culture | Pace, agency | High agency + uplift mindset |
+| 17:50–18:00 | Your questions + wrap | Signal quality | 3 questions; thank Pranav |
 
-**Energy budget:** Front-load water + protein; protect voice for afternoon deep-dive. Treat lunch as interview — no ranting about past employers.
+**Energy budget:** Eat a real breakfast before leaving; protein + water at lunch; protect voice for 14:00–16:15. No caffeine crash at 16:00 if you can help it.
+
+**Travel note:** Electronic City from most of Bengaluru is **45–90+ min**. Build buffer — late start burns the welcome round.
 
 ---
 
@@ -402,13 +413,21 @@ Pick 3–4 max per interviewer; don’t spray.
 
 ---
 
-## 12. Logistics
+## 12. Logistics (locked from invite)
 
-- **Location:** Confirm Bangalore office address + floor with recruiter; arrive 15 min early.  
-- **Bring:** Laptop charged, notebook, water, ID, list of questions.  
-- **Laptop:** Be ready to code in their IDE or shared doc; know your GitHub if they ask for past code.  
-- **Phone:** Silent; battery pack if long day.  
-- **After:** Same-day thank-you note to recruiter with 2 concrete technical takeaways from the day (shows you were listening).
+| Item | Detail |
+|---|---|
+| **Date / time** | Thu **24 Sept 2026** · **12:00 – 18:00 IST** |
+| **Venue** | Scaler School of Technology, Electronic City |
+| **Address** | 14, 3rd Cross, Parappana Agrahara, Electronic City Rd, Electronics City Phase 1, Bengaluru **560100** |
+| **Host** | Pranav TR · pranav.tr@scalerailabs.com |
+| **Arrive** | **11:40** at campus gate |
+| **Leave home** | **10:30–11:00** (traffic-dependent) |
+| **Bring** | Laptop + charger, notebook, water, government ID, phone on silent, day-of cheatsheet |
+| **Calendar** | Reply **Yes** to the invite |
+| **After** | Same-day thank-you to **pranav.tr@scalerailabs.com** with 2 concrete technical takeaways from the day |
+
+**Maps:** search “Scaler School of Technology Electronic City” or the address above. Campus is the same cluster as Scaler’s Bangalore / InterviewBit office (Surya Park II listings).
 
 ---
 
