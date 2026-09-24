@@ -20,19 +20,22 @@
 
 ---
 
+## Bar for you (10 YOE)
+Not intern/SDE-1. Expect **Staff-shaped** evaluation: design judgment, ownership depth, eval/trust instincts — DSA is a filter, not the main signal. Lead as **builder who sets bar**; leadership only as amplifier unless they open EM track.
+
 ## Suggested 12:00–18:00 rhythm
 *(Exact slots unknown — follow their agenda; use this for energy.)*
 
-| Time | Likely | You |
+| Time | Likely | You (10 YOE weight) |
 |---|---|---|
-| 12:00–12:20 | Pranav welcome / agenda / culture | Warm, curious; 90-sec open if asked |
-| 12:20–13:20 | Coding / problem-solving | Clarity > clever; narrate |
-| 13:20–14:00 | Lunch / informal | Interview continues — no Skydo rant |
-| 14:00–15:15 | System design (gym / eval) | Draw the spine below |
-| 15:15–16:15 | Resume deep-dive (copilot / payments) | Numbers ready |
-| 16:15–17:15 | LLD / live modify / 2nd tech | Interfaces, not rewrites |
-| 17:15–17:50 | HM / senior / culture | High agency + uplift mindset |
-| 17:50–18:00 | Your Qs + wrap | 3 sharp questions; thank Pranav |
+| 12:00–12:20 | Pranav welcome / agenda | 90-sec open; ask rundown |
+| 12:20–13:20 | Coding | Still required — clarity, invariants, tests; medium-hard OK |
+| 13:20–14:00 | Lunch | Peer signal; no rant |
+| 14:00–15:30 | **System design (heaviest)** | Gym/eval platform; trade-offs unprompted |
+| 15:30–16:30 | **Resume deep-dive** | Copilot + payments; failure modes + metrics |
+| 16:30–17:20 | LLD / “change this” / architecture poke | Interfaces, versioning, multi-tenant |
+| 17:20–17:50 | HM / senior / founder | Scope owned, hiring bar, pace under ambiguity |
+| 17:50–18:00 | Your Qs | Strategic (partners, uplift, 6-mo success) |
 
 ---
 

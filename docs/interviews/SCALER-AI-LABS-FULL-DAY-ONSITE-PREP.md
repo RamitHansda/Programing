@@ -107,11 +107,19 @@ You are not pitching “EM who wants to manage.” You are pitching **senior eng
 | Expert rubrics / hiring bar | Led hiring for team of 12; Scaler-adjacent culture of rigorous evaluation |
 | Scale + correctness | GS sharding/failover; Moneyview millions of debit instructions/day |
 
-### Role framing if level is ambiguous
+### Role framing — you have **~10 YOE** (EM + ex-GS VP)
 
-If loop is **Staff/Principal IC** → lean IC: architecture of gyms, eval platforms, execution infra.  
-If loop is **EM / Eng Lead** → lean: shipping multi-team systems, hiring bar for AI eng, quality of evals as a product.  
-Default if unclear: **IC depth first, leadership as amplifier** — this company worships builders.
+This is **not** an intern / SDE-1 day. At your tenure they usually probe **Staff (or EM-who-still-builds)** bar:
+
+| Signal | Junior loop | **Your loop (10 YOE)** |
+|---|---|---|
+| Coding | Main filter | Still done — clarity + correctness; won’t carry a weak design day |
+| System design | Light / optional | **Center of gravity** — gyms, evals, scale, failure modes |
+| Resume deep-dive | “What did you use?” | “What did you own, break, measure, and refuse?” |
+| LLD | CRUD APIs | Contracts, state machines, versioning, isolation |
+| Culture / HM | Attitude | Scope, pace, hiring bar, ambiguity, partner mindset |
+
+**Default posture:** IC depth first (**architect of trusted agent/eval systems**). Bring EM only when they ask about teams/hiring — don’t open with “I manage 12 people” as your primary value. This company worships builders; management is leverage on top of that.
 
 ---
 
@@ -394,9 +402,11 @@ Pick 3–4 max per interviewer; don’t spray.
 2. What’s the biggest source of false signal in your evals today — flaky envs, weak verifiers, or contamination risk?  
 3. For a Staff/EM hire, what does success look like in 6 months — gym coverage, uplift contracts with labs, or platform reliability?  
 4. How are reward models validated against expert IRR before they train policies?  
-5. Where do Bangalore eng teams own vs partner with SF / research?  
+5. How do Bangalore eng teams pair with SF / frontier lab partners day-to-day?  
 6. What’s harder right now: computer-use fidelity or verifiable rewards in fuzzy domains?  
 7. How do partner frontier labs consume your artifacts — datasets, gyms, ranked diffs?
+
+**For Pranav (host):** What does a strong full-day candidate look like in this loop? How does AI Labs work with the SST campus day-to-day?
 
 ---
 
