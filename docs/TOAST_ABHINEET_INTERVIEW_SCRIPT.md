@@ -1,278 +1,228 @@
-# Toast × Abhineet — Interview Script (Speak These Answers)
+# Toast × Abhineet — EM Interview Script (Speak These Answers)
+**Role:** Engineering Manager — Payments / Funds Management  
 **Round:** HM/Tech Screen · 45 min · 29 Sep 2026 · 10:00 IST  
-**Use:** Read out loud once. Don't memorize word-for-word — lock the *shape* and numbers.
+**Interviewer:** Abhineet Mishra, Sr Manager SWE (he's hiring EMs onto his Payments org)
+
+**Bar:** Technical EM who can dive deep on settlement *and* build/raise a team — not pure people-manager, not pure Staff IC.
 
 ---
 
-## SCENE 0 — Opening (he asks “Tell me about yourself”)
+## SCENE 0 — “Tell me about yourself”
 
 **SAY:**
 
-> Sure. I'm Ramit. Most recently I've been founding engineer, then Engineering Manager and CIO at Skydo — a fintech for cross-border B2B payments. I designed the payments, settlement, and reconciliation platform from scratch. It processes about ten thousand international transactions a day.
+> Sure. I'm Ramit. I'm an Engineering Manager who's built and led payments platforms end-to-end.
 >
-> The hard problems weren't "scale to millions of QPS" — they were correctness under partial failure. Payment partners timeout without telling you if money moved. Retries can double-settle. Settlement files arrive T+1 with fees already deducted. So I spent a lot of energy on idempotency end-to-end, explicit state machines, durable intent before side effects, and reconciliation as the final safety net.
+> At Skydo — cross-border B2B fintech — I was founding engineer, then EM and CIO. I designed the payments, settlement, and reconciliation platform, and I built the engineering team around it — about twelve engineers. The platform runs roughly ten thousand international transactions a day.
 >
-> Before Skydo I was VP of Engineering at Goldman Sachs on distributed market-risk compute — multi-terabyte in-memory clusters, live re-sharding without downtime.
+> As EM my job was twofold: keep the money path correct under partner failure — idempotency, state machines, settlement timeouts, recon — and raise the team so that correctness was a standard, not a heroics. I split platform versus product tracks, enforced ADRs on load-bearing decisions, and shifted alerting to business SLOs, which cut production incidents about thirty percent. As CIO I also owned ISO 27001 and SOC 2 Type II.
 >
-> I'm talking to you because Funds Management at Toast is the same class of problem at restaurant scale — merchant payouts, fee and withholding netting, settlement correctness. If Friday's sales don't land correctly Monday, the restaurant can't pay staff. That's the money path I want to own hands-on again.
+> Before that I was VP of Engineering at Goldman Sachs — nine engineers — on distributed market-risk compute.
+>
+> I'm talking to you because I want to lead an EM seat on Funds Management at Toast — merchant payouts and settlement at restaurant scale — where team quality and money correctness are the same product.
 
-**STOP.** Let him pick the thread.
+**STOP.**
 
 ---
 
-## SCENE 1 — “Why Toast? / Why this team?”
+## SCENE 1 — “What are you looking for?”
 
 **SAY:**
 
-> Two reasons. First, Toast uniquely owns both the restaurant operating system and the money rail. A lot of fintechs own one or the other. Funds Management is where merchant trust is won or lost every day — deposits, fees, Capital repayments, instant deposit. That's load-bearing product, not a back-office afterthought.
+> I'm looking for an Engineering Manager role owning a payments or funds team — settlement, payouts, reconciliation — where I can do three things.
 >
-> Second, from what I understand of your team — Pricing and Funds Management building high-throughput settlement pipelines — that's exactly the work I've done at Skydo: settlement sweeps, bank partner integration under timeout ambiguity, recon that explains why net ≠ gross. I want that depth again at Toast's volume, on a team that already treats settlement as a first-class platform.
+> First, build and grow a high-bar team: hire well, develop seniors toward Staff, set engineering standards on the money path.
+>
+> Second, stay technically deep enough to call correctness — idempotency, failure modes, payout netting — not manage from a status deck.
+>
+> Third, partner with product and ops so merchant trust — Monday deposits being right — is treated as the product outcome.
+>
+> Toast Funds Management fits that. I've done this as EM at Skydo; I want to do it at Toast's scale in Payments.
+
+**If he asks “Why EM not Staff IC?”:**
+
+> I've done both builder and EM. I'm choosing EM because the leverage I want next is multiplying correctness through a team — hiring, standards, roadmap tradeoffs, mentoring — while still diving deep on architecture. At Skydo the EM seat grew organically from founding eng; I know how to stay technical without becoming a bottleneck. Your posting for an EM passionate about high-performing teams and large-scale payments is exactly that intersection.
 
 ---
 
-## SCENE 2 — “Walk me through the payment system you built.”
+## SCENE 2 — “Why Toast? / Why Payments EM?”
 
-**SAY (5–7 min — this is your main deep dive):**
+**SAY:**
 
-> Happy to. I'll structure it as problem → write path → settlement → recon → what I'd do differently.
+> Toast owns the restaurant OS and the money rail. Funds Management is where merchant trust lives — if Friday's sales don't land correctly, the restaurant can't pay people. Leading that team is high-leverage EM work: every eng standard you set protects real cash flow for small businesses.
 >
-> **Problem.** Cross-border B2B payments are hard for three reasons. Money cannot be wrong — a duplicate settlement is a real loss. Multiple external dependencies — payment providers, AD banks, SWIFT rails — each fail independently. And every transaction needs an audit trail for compliance; money can sit in limbo while a review happens.
->
-> **Write path.** Every entry point — funding, settlement, ledger, refund — has an idempotency layer. Pattern is: Redis for the fast path so retries don't stampede, backed by a Postgres unique constraint on the idempotency key in the same transaction as the business write. Redis can crash. Postgres cannot silently accept a duplicate money movement.
->
-> Inside the transaction we advance an explicit state machine — initiated, authorized, captured, settled, reconciled, plus disputed. We never skip states. For concurrent updates on the same payment we use optimistic locking with a version column, or FOR UPDATE on account-balance critical paths.
->
-> Critical rule: **durable intent before side effect.** We write the intent to the DB first, then call the partner. Never partner-first. If we crash after the partner succeeds but before we record it, reconciliation and status polling close the gap — we don't invent magic exactly-once delivery.
->
-> After commit we fan out on Kafka. Partition key is always `payment_id` so all events for one payment stay ordered. We learned that the hard way — someone used `invoice_id` in staging and you can get ledger entries before funding is confirmed. That became a team-wide rule in the eng playbook.
->
-> **Settlement.** The riskiest hop is the bank settlement API. They can timeout at sixty seconds without telling you if the debit happened. We send a deterministic idempotency key derived from `payment_id` — never a random UUID on retry. On timeout the payment goes to UNKNOWN, we poll, exponential backoff with jitter, DLQ after three attempts. Batch failures are per-transaction, never "retry the whole batch" — that would double-settle the ones that already succeeded.
->
-> **Recon.** Daily we match internal ledger against external settlement files. Exact match on processor ref, then rule-based partial matches for fee math — net is not gross. Unmatched and amount-mismatch go to an exception queue with aging SLAs. Re-runs are idempotent under a `reconciliation_run_id`.
->
-> **Impact.** Ten thousand plus a day. Business SLO alerts — "stuck in PENDING more than five minutes" — cut production incidents about thirty percent. I also owned ISO 27001 and SOC 2 as CIO, so auditability wasn't bolted on later.
->
-> **Regret, briefly.** I wish we'd event-sourced the payment state transitions from day one. We retrofitted a payment_events table later. Free audit trail and easier recon — painful to add after the fact.
+> Your Payments org in Bengaluru is growing — EM for payments, Staff for settlement pipelines. I want the EM seat: hire and develop the people who build those pipelines, set the bar on fault-tolerant settlement, and deliver with product. That's the job I've already been doing at Skydo; Toast is the scale and domain I want next.
 
 ---
 
-## SCENE 3 — Follow-ups on the deep dive (rapid fire)
+## SCENE 3 — “Walk me through a system you owned” (EM framing)
 
-### “What if the Redis lock TTL expires mid-processing?”
+**SAY (attach leadership to every technical beat):**
 
-**SAY:**
-
-> TTL is a cache concern only. Correctness lives in Postgres. If the first request committed, the idempotency key row exists — the second attempt hits the unique constraint and we return the original outcome. If it didn't commit, the second attempt processes normally. Redis is speed, not source of truth. On money paths I fail closed if I can't establish durable dedupe.
-
-### “What if the bank times out and you don't know if money moved?”
-
-**SAY:**
-
-> That's the UNKNOWN state. We do not retry with a new key — that creates a second payment. We poll the partner with the original deterministic idempotency key. If the partner confirms success, we advance to SETTLED. If failed, we mark FAILED and allow a clean retry. If still unknown past SLA, we page and recon against the settlement file is the backstop. Blind retry is how you double-pay.
-
-### “How do you guarantee exactly-once?”
-
-**SAY:**
-
-> I don't claim magic exactly-once across the network. I design for at-least-once delivery plus idempotent consumers plus a durable unique business key. The combination gives you effectively-once side effects. Anyone who says the message bus alone is exactly-once is skipping the hard part.
-
-### “Why Kafka? Toast uses Pulsar — is that a problem?”
-
-**SAY:**
-
-> Same contracts. Ordered fan-out, consumer groups, at-least-once, dead-letter, partition-key discipline. I've operated that model on Kafka. I'd ramp on Pulsar specifics — topics, cursors, consumer pause/resume — quickly. The design judgment transfers; the client API is learnable.
-
-### “Why modular monolith vs microservices early on?”
-
-**SAY:**
-
-> Payments have tight transactional boundaries. Early on, distributed sagas across ten services would have added failure modes we didn't need. Modules talked through Kafka with clear interfaces, so extraction later is evolution, not a rewrite. Load-bearing money path stayed consistent; high-churn product surfaces could move faster. Reversible debt on UI is fine. Load-bearing debt on the state machine is not.
+> I'll cover the system and how I led it — because as EM both matter.
+>
+> **Business problem.** Cross-border payments: money can't be wrong; partners fail independently; compliance can hold funds. Ten thousand plus transactions a day.
+>
+> **Architecture.** Idempotency at every boundary — Redis fast path, Postgres as source of truth. Explicit state machines. Durable intent before partner calls. Kafka fan-out with `payment_id` as partition key. Settlement to bank with deterministic idempotency keys, UNKNOWN state on timeout, poll-don't-blind-retry. Daily recon: internal versus settlement files, fee-aware partial matches, aged exception queues.
+>
+> **How I led it.** I made correctness non-negotiable in code review and wrote near-misses into the eng playbook — for example when someone used `invoice_id` as partition key in staging. I structured the team into platform — payments, settlement, recon — with a higher design bar, and product moving fast inside clear contracts. ADRs for data models and integrations. Business SLO alerts — stuck PENDING more than five minutes — not just CPU. That dropped incidents about thirty percent.
+>
+> **Org outcome.** Team of twelve. Reliability treated as product requirement because a settlement bug meant real money stuck. Blameless incidents with concrete action items. I stayed close enough to the design that I could unblock Staff-level decisions without owning every PR.
 
 ---
 
-## SCENE 4 — “How would you design merchant daily payouts?” (Toast domain)
+## SCENE 4 — Technical follow-ups (same depth — EM must still know)
+
+### Redis TTL / bank timeout / exactly-once
+
+Use the same answers as IC depth — then add one leadership line:
+
+> …And as EM I wouldn't accept a design review that handwaves this. UNKNOWN states and deterministic keys are team standards, not optional elegance.
+
+### “How technical are you day to day as EM?”
 
 **SAY:**
 
-> I'd treat payout as its own product with the same correctness bar as capture.
->
-> **Inputs.** All captured and settled card transactions for merchant M covering business day D, plus refunds, chargebacks, processing fees, and withholdings — Capital repayment, equipment lease, delivery fees, instant-deposit fees, and so on.
->
-> **Netting.**
-> `net = gross card payments − refunds − fees − withholdings`
-> Fees and withholdings are separate ledger lines. Restaurants debug both when deposit ≠ sales — conflating them makes support impossible.
->
-> **Gates.** Don't initiate payout if net is negative, if there's a risk or KYC hold, or if a prior payout for the same settlement key is already in flight.
->
-> **Idempotency.** Payout identity is deterministic: `(merchant_id, settlement_date, rail, batch_id)`. Unique constraint. State machine: CALCULATED → INITIATED → SUBMITTED → CONFIRMED → RECONCILED, plus FAILED / UNKNOWN.
->
-> **Execution.** Durable payout intent first, then ACH or processor call with that same idempotency key. On timeout — UNKNOWN + poll, never new payout id.
->
-> **Cutoff clocks.** Batch cutoffs are business contracts. Late batch shifts expected deposit day; weekends and banking holidays push. The system should expose expected deposit date so support and the merchant aren't guessing.
->
-> **Recon.** Expected payout amount and date versus actual bank credit versus the per-transaction contribution list. Exception aging with escalation — never silently absorb a money gap.
->
-> **Instant deposit** is a parallel rail: faster, priced differently, stricter risk limits, same idempotency rules. I wouldn't shortcut correctness to make money arrive faster.
-
-**If he asks multi-location:**
-
-> Decision point is per-location netting versus rolled account. Per-location is clearer for restaurant operators reconciling one store. Rolled is simpler for treasury. I'd default to per-location payout identity with optional rollup reporting, unless product has a strong reason otherwise.
+> I don't write every feature, but I own the architectural invariants. I still do design reviews on money-path changes, write or co-write ADRs, and jump into incidents when settlement is ambiguous. I measure myself on whether the team can ship correctly without me — standards, runbooks, Staff-ready seniors — not on my commit count. At Skydo I could still walk the write path and settlement failure modes cold, which is what let me push back on risky shortcuts.
 
 ---
 
-## SCENE 5 — “How does reconciliation work?”
+## SCENE 5 — “How would you design / lead merchant payouts?”
 
 **SAY:**
 
-> Three inputs: internal transaction events, processor or bank settlement files, and optionally bank feed credits.
+> As EM I'd split this into product outcome, architecture bar, and team plan.
 >
-> Normalize everything to minor units. Keep gross, fee, and net separate.
+> **Outcome.** Merchants get the right net deposit on the promised day, and can explain fees versus withholdings when numbers don't match sales.
 >
-> Matching waterfall: exact on processor reference, then order or merchant reference, then rule-based partial match within fee-tolerance, else exception queue.
+> **Architecture bar I'd hold.** Netting: gross minus refunds minus fees minus withholdings, separate ledger lines. Deterministic payout id on merchant, settlement date, rail. Durable intent before ACH. UNKNOWN on timeout. Recon to bank credit with exception SLAs. Instant deposit is a parallel rail with the same correctness bar.
 >
-> Exception types: unmatched internal — settlement delayed or capture failed; unmatched external — missing internal record; amount mismatch — fee or FX; duplicates; chargebacks routed to disputes.
+> **Team plan.** Staff or strong Senior owns payout state machine and idempotency library. Another owns recon matching and exception UX with product. I'd staff on-call with runbooks before accelerating payout volume. Roadmap: correctness and observability first, then latency products like instant deposit — never the reverse.
 >
-> Matching is idempotent under a run id so re-processing a file doesn't double-resolve. Unresolved past SLA auto-escalates.
->
-> At Skydo this is what closed silent partner success. At Toast it's what a restaurant owner is doing when they compare Sales Summary to Payout Overview to their bank statement — timing, fees, withholdings, batch cutoffs.
+> **Stakeholders.** Product on fee/withholding UX; finance/ops on exception SLAs; US payments on processor boundaries. My job is clear ownership and one money invariant across those surfaces.
 
 ---
 
-## SCENE 6 — Behavioral scripts (STAR, 90–120 sec each)
+## SCENE 6 — EM behavioral scripts
 
-### “Tell me about a production incident involving money.”
+### “What are you looking for in your next role?”
+→ Scene 1.
 
-**SAY:**
-
-> **Situation.** We had a settlement partner return a gateway timeout. Ops assumed failure. The automated retry path was about to fire with what could have been treated as a new attempt.
->
-> **Task.** Confirm whether money had actually moved, prevent a double-send, and restore a clear state for the customer and for on-call.
->
-> **Action.** I halted automated retries for that corridor immediately. We polled the partner with the original deterministic idempotency key. Ledger said IN_FLIGHT; partner eventually confirmed success. We advanced to SETTLED, did not retry. Then we made three durable changes: an explicit UNKNOWN state in the state machine, a runbook for on-call, and a business SLO alert on PENDING longer than five minutes so we don't discover this from a customer ticket.
->
-> **Result.** No double-settlement. MTTR on similar issues dropped because on-call had a playbook. That incident is also why I treat partner timeout as a first-class design case, not an edge case.
-
-### “Tell me about raising the engineering bar.”
+### “How do you hire?”
 
 **SAY:**
 
-> Two examples. First, idempotency and partition-key discipline. After a staging near-miss where a consumer used `invoice_id` instead of `payment_id`, I didn't just fix the bug — I wrote it into the eng playbook and made it a code-review checkbox on every money-path PR. Near-misses are cheaper teachers than production losses.
+> For a payments EM team I hire for three signals: can they reason about failure modes on a money path, do they raise the bar for others, and will they own outcomes without ego.
 >
-> Second, I split the team into a platform track — payments, settlement, recon — and a product track. Platform had a higher design bar and ADR requirement for data models and integrations. Product moved fast inside clear contracts. Mixing those bars slows both down.
+> Process: structured loop — coding or practical design, system design on settlement or recon, and behavioral on ownership. Same rubric for every candidate. I debrief with evidence, not vibe. At Skydo I hired into both platform and product tracks with different bars — platform needed deeper distributed-systems judgment.
 >
-> The measurable outcome was fewer severity-one incidents — about thirty percent down after we also shifted alerting to business SLOs — and faster onboarding because ADRs explained *why*, not just *what*.
+> Red flags: "exactly-once" handwaves, blame-heavy incident stories, can't explain a tradeoff they made. Green flags: near-miss stories that became standards, clear metrics, mentorship examples.
 
-### “Tell me about a disagreement with another engineer.”
+### “How do you grow engineers? Senior → Staff?”
 
 **SAY:**
 
-> An engineer wanted to ship a settlement retry by generating a fresh UUID on each attempt — simpler client code. I pushed back because that breaks partner-side dedupe and creates double-pay risk under timeout.
+> Context over answers in design review — I ask what happens if the partner succeeds and the response is lost.
 >
-> I didn't win by seniority. I walked through the failure mode with a sequence diagram: timeout after success, retry with new key, two debits. We agreed retries must reuse the business idempotency key, and we added a unit test and contract test that fail if a new key is minted on retry.
+> I give seniors a production invariant to own: idempotency library, settlement job framework, recon rules engine — and ask them to measure adoption. That's the Staff transition: from shipping features to defining contracts other teams consume.
 >
-> Relationship stayed fine — the point was shared ownership of the money invariant, not being right in the room. That's how I think about "one team" and leading with humility: argue the blast radius, then leave a durable guardrail.
+> I've mentored about eight engineers that way at Skydo. Cadence: weekly 1:1s, written growth plans, and putting them in front of product and cross-team design reviews so influence isn't only inside the squad.
 
-### “How do you balance speed vs correctness?”
+### “How do you handle underperformance?”
 
 **SAY:**
 
-> Reversible debt is fine. Load-bearing debt is not. I'll let a team cut corners on a UI experiment. I will not let them shortcut a payment state machine that ten services depend on. At Skydo a settlement bug meant real money stuck — reliability was a product requirement, not engineering overhead. For Funds Management I'd hold the same line: ship fast on reporting UX; go slow and explicit on payout initiation and netting math.
+> Early, specific, written. Clarify the bar with examples — design quality, delivery predictability, incident ownership. Time-boxed improvement plan with support: pairing, smaller scoped ownership, clearer review feedback. If it doesn't turn, I make the hard call — leaving someone in a money-path seat who's unreliable is unfair to them and dangerous for merchants. I've had to do that; I don't prolong ambiguity.
 
-### “How do you mentor / grow seniors toward Staff?”
+### “Prioritization / roadmap conflict with product”
 
 **SAY:**
 
-> Context over answers. In design reviews I ask failure-mode questions — what happens if the partner succeeds and your response is lost? What's your dedupe key? What's the blast radius of this lock?
+> I frame tradeoffs in merchant risk and cash-flow language, not eng preference. Example: product wants instant deposit speed; we still need UNKNOWN-state handling and recon SLAs first. I'll propose a sequenced plan — ship the correctness substrate, then the latency product — with dates and risk if we invert the order. Reversible UI debt yes; load-bearing payout debt no. At Skydo that framing usually aligned us; when it didn't, I escalated with options, not a blockage.
+
+### “Tell me about a production incident you led as EM”
+
+**SAY:**
+
+> Partner timeout; ops assumed failure; retry risked double-send.
 >
-> I also separate "ship the feature" from "define the contract other teams will reuse." Seniors who start writing the idempotency library, the settlement job framework, or the recon rule engine — and measuring adoption — are operating at Staff. I've mentored that transition with eight engineers at Skydo by giving them a real production invariant to own, not a toy project.
+> As EM I owned the incident response: halted automated retries for that corridor, assigned polling with the original idempotency key, confirmed partner success, advanced state cleanly. No double-settlement.
+>
+> After: blameless review. Three actions I drove — explicit UNKNOWN in the state machine, on-call runbook, business SLO on PENDING over five minutes. Incidents of that class got faster and rarer. My job in the room was calm ownership and durable follow-through, not hero debugging alone.
 
-### “Senior vs Staff — where do you sit?”
+### “How do you partner with your manager (Sr Manager)?”
 
 **SAY:**
 
-> I operate at Staff. Senior ships complex features well inside a team. Staff defines contracts, failure modes, safe defaults, and reusable substrate so multiple teams ship correctly — and defends those invariants under pressure. At Skydo I wasn't just implementing settlement; I set the money-path standards, owned recon as a platform capability, and structured the team so product could move without breaking correctness. That's the seat I want on Funds Management.
+> Direct on risks early. Written options on irreversible bets. Metrics on money SLOs and team health — hiring pipeline, Senior→Staff progress, incident trends — not just feature burnup. I want a manager who cares about operational excellence; I'll bring problems with recommended paths, and I'll disagree openly when a timeline threatens correctness. Then commit once decided.
+
+### “Conflict between two engineers”
+
+**SAY:**
+
+> I get both perspectives privately first, then a facilitated discussion on the blast radius — usually a design tradeoff, not a personality fight. We leave with a written decision or ADR. Example: retry with new UUID versus deterministic key — we diagrammed double-pay failure, chose deterministic keys, added contract tests. Relationship intact; invariant protected. One team, lead with humility — argue the risk, not the ego.
+
+### “How do you think about team structure on Funds Management?”
+
+**SAY:**
+
+> I'd want clear ownership slices: payout initiation and netting; recon and exception ops tooling; withholdings/Capital/instant-deposit product integrations — with a shared platform bar for idempotency and state machines. Too many people on one codebase without owners creates diffusion. Too many silos without shared standards creates inconsistent money paths. Platform track for substrate, product track for merchant-facing funds features, same correctness checklist across both.
 
 ---
 
-## SCENE 7 — Light system / coding prompts (if he goes technical)
-
-### “Design offline POS payment without double-charge on sync”
+## SCENE 7 — “How do you measure success in first 90 / 180 days?”
 
 **SAY:**
 
-> Terminal writes a durable local payment intent with a client-generated idempotency key before any capture attempt. Sync queue replays that same key to the server. Server dedupes on the key — second sync is a no-op returning the original capture result. For check edits I'd be careful: last-write-wins is dangerous on money; prefer explicit payment states over silently merging concurrent edits. Happy to go deeper on terminal sync — or stay on settlement and payouts if that's more useful for Funds Management.
-
-### “Model a payment state machine” (verbal or whiteboard)
-
-**SAY while sketching:**
-
-```
-INITIATED → AUTHORIZED → CAPTURED → SETTLED → RECONCILED
-                ↓             ↓          ↓
-             FAILED       REFUNDED   DISPUTED
-                ↑
-            UNKNOWN  (only from in-flight partner calls; exits via poll or recon)
-```
-
-> Transitions are versioned. Side effects — partner calls, ACH — only fire on specific transitions and are keyed by the payment or payout id. UNKNOWN cannot go straight back to INITIATED with a new key.
-
-### “Deduplicate webhook retries”
-
-**SAY:**
-
-> Webhooks are at-least-once. I dedupe on a business event id from the partner, store processed event ids with the resulting state transition, and make handlers idempotent — processing twice yields the same ledger state. I never trust "we only send once."
+> **First 90.** Earn trust: understand payout and recon architecture, on-call pain, exception queues, stakeholder map. Ship one visible reliability or clarity improvement with the team — better SLO, runbook, or recon gap. Hire or advance at least one strong loop if there's an open req. 1:1s and a written team health read for you.
+>
+> **By 180.** Team delivering roadmap without correctness regressions; clear owners for payout versus recon; at least one Senior visibly moving toward Staff-shaped impact; incident MTTR and exception aging trending the right way. I'll propose the metrics with you rather than invent them in a vacuum.
 
 ---
 
-## SCENE 8 — Closing / your questions (last 5 min)
-
-**When he asks “Any questions for me?” — pick 3:**
+## SCENE 8 — Your questions (EM-flavored — pick 3)
 
 **Q1:**
-> What's the hardest correctness or scale problem Funds Management is solving in the next six to twelve months — payout latency, multi-product withholdings, recon UX for restaurants, Capital and instant deposit, or something else?
+> What does great look like for an EM on Funds Management in the first six months — team health, payout reliability, hiring, or a specific product like Capital or instant deposit?
 
 **Q2:**
-> How does Bengaluru Payments share ownership with US payments and processor integrations — where does the boundary sit for a Staff engineer on your team?
+> How is the Payments org in Bengaluru structured today — what would my team own versus sibling teams, and how do you want EMs to partner with you as Sr Manager?
 
 **Q3:**
-> For someone joining at Staff, is success more about building shared settlement substrate other teams consume, or delivering product surfaces like Capital withholdings and instant deposit? Or both — and how do you weigh them?
+> What's the hardest people or delivery challenge on the team right now — hiring bar, Senior depth, cross-timezone with US, operational load?
 
-**Q4 (optional):**
-> What separates a strong Senior from someone you'd hire at Staff on Funds Management?
+**Q4:**
+> How do you weigh roadmap speed versus money-path correctness when product pressure is high?
 
-**Q5 (optional):**
-> How do you think about ops excellence here — payout incident MTTR, recon exception SLAs, that kind of thing?
-
-**If he asks “What else should I know about you?”:**
-
-> Only that I care about money paths the way restaurants care about Monday deposits. I'm at my best when correctness, operability, and team standards are the product. I'd rather prevent one double-payout in design review than ship three features that leave UNKNOWN states undefined.
+**Q5:**
+> What separates a strong EM from someone you'd hesitate to hire onto this Payments org?
 
 ---
 
-## SCENE 9 — Full 45-min rehearsal map (practice once)
+## SCENE 9 — 45-min rehearsal map (EM)
 
-| Min | He says | You run |
+| Min | Likely topic | You run |
 |---|---|---|
-| 0–2 | Intro / tell me about yourself | Scene 0 |
-| 2–5 | Why Toast | Scene 1 |
-| 5–20 | Walk through your system | Scene 2 + 3 follow-ups |
-| 20–30 | Design payouts OR recon OR incident | Scene 4 / 5 / 6 |
-| 30–38 | Behavioral / Staff bar | Scene 6 |
-| 38–45 | Your questions | Scene 8 |
+| 0–3 | Tell me about yourself | Scene 0 |
+| 3–8 | What are you looking for / why Toast | Scene 1–2 |
+| 8–22 | System you led + tech depth | Scene 3–4 |
+| 22–35 | EM behaviors (hire, grow, incident, conflict) | Scene 6 |
+| 35–40 | 90-day plan / working with him | Scene 7 |
+| 40–45 | Your questions | Scene 8 |
 
 ---
 
-## Metrics card (say exactly these)
+## Metrics card
 
-- **10K+** international txns/day at Skydo  
-- Production incidents **~−30%** after business SLO alerting  
-- Led **12** engineers at Skydo, **9** at Goldman as VP  
-- GS: failover **−40%**, batch **−25%**, **3×** throughput (when relevant)  
-- Owned **ISO 27001 + SOC 2 Type II** as CIO  
-- Moneyview prior: **5M+/mo** debit instructions (if scale comparison comes up)
+- EM + CIO @ Skydo · led **12** engineers  
+- VP Eng @ Goldman · led **9**  
+- **10K+** txn/day payments + settlement + recon  
+- Incidents **~−30%** via business SLOs  
+- Owned **ISO 27001 + SOC 2**  
+- Mentored **~8** engineers on distributed systems / leveling  
 
 ---
 
-## One-liner if you blank
+## EM one-liner if you blank
 
-> I design payment systems for correctness under partial failure — idempotency at every boundary, explicit state machines, durable intent before side effects, and reconciliation as the final safety net. At ten thousand transactions a day, one duplicate settlement is a real loss. That shaped every decision.
+> I lead payments teams that move money correctly — I hire and raise the bar, I still dive deep on settlement failure modes, and I treat merchant cash-flow trust as the product outcome. That's the EM seat I want on Funds Management.
