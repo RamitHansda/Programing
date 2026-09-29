@@ -271,17 +271,17 @@ Phrases that keep you concise:
 
 Each story is written to be spoken. Practice until you can drop the headers and still hit all five beats. Keep the learning beat concrete.
 
-### 5.1 Influence without authority — Goldman risk modernization
+### 5.1 Influence without authority — production readiness at Skydo
 
-**Context.** Market-risk aggregation at Goldman served pricing, VaR, and stress workflows. Quants owned model correctness. Engineering teams in other regions owned operations. I led a team of nine; I did not lead the quants or the regional owners. A “tech win” on our multi-terabyte in-memory cluster could still break a risk run.
+**Context.** We were shipping quickly, and new services did not share a bar. Some had dashboards and runbooks. Some had neither. Idempotency was implemented three different ways. I led payments. The other product teams did not report to me, and they were about to copy whichever pattern they saw first.
 
-**Responsibility.** I owned the platform modernization — sharding, replication, fault tolerance, and the ingestion path for petabyte-scale market data — and I owned getting it adopted by people whose success metric was model fidelity, not our migration plan.
+**Responsibility.** I owned getting a single bar adopted by teams I could not assign work to. A memo from me was not going to change their launch checklist.
 
-**Decision.** I stopped treating modernization as an internal refactor. We held joint design reviews with quants, wrote the input/output contract and the latency expectation down, and used ADRs for irreversible compute changes. Rollout was phased, with cutovers communicated early enough that another region could refuse a date. Where a change was hard to undo, we did not ship it on enthusiasm from our team alone.
+**Decision.** I made it a peer review, not a manager gate. Before a new service or a major endpoint took production traffic, a senior engineer from another team ran a short Production Readiness Review: idempotency bound to a business intent id, retry semantics written down, timeouts on outbound calls, alerts tied to SLOs, a named on-call owner, and a tested rollback. It lived as a shared doc, not a ticket workflow, and we re-read it 30 days after launch against the incidents that actually happened. I ran it on payments first, then asked the other teams to edit it. The safe default also went into a small library, so the easy path was the correct idempotency contract.
 
-**Result.** The modernization landed without breaking global risk workflows. Quant partners trusted the platform enough to stay on it. That cross-team outcome was part of why I was promoted to Vice President within a year.
+**Result.** Production incidents came down about 30%. Two teams I do not manage adopted the checklist on their own. The review doc became the onboarding read for a new service.
 
-**Learning.** In a specialist domain I lead by translating the contract, not by outranking the expert. The practice I kept: no irreversible compute change without a written contract the downstream owner has seen.
+**Learning.** A standard counts when people who do not report to you can run it without you, and can change it. The practice I kept: peer review of the launch, not a gate I sit on.
 
 ### 5.2 Conflict — compliance speed versus a new onboarding path
 
@@ -347,7 +347,7 @@ Each story is written to be spoken. Practice until you can drop the headers and 
 
 | They ask about | Lead with | If they want another |
 |---|---|---|
-| Influence without authority | 5.1 Goldman quants and regional owners | 5.2 the decision memo across Product and Compliance |
+| Influence without authority | 5.1 Skydo production-readiness review, adopted by two teams I don’t manage | 5.2 the decision memo across Product and Compliance |
 | Conflict | 5.2 onboarding versus compliance | 5.6 naming your own miss in public |
 | Mentoring | 5.3 design bar, eight engineers | The senior-IC behavior story in the Dezerv bank (receipts, 30/60/90, shadow the next reviews) |
 | Architectural judgment | 5.4 invariants, ladder, incidents −30% | 5.5 vocabulary before the matcher |
@@ -432,7 +432,7 @@ Client retry. Partner timeout. Duplicate or late webhook.
 Context → Responsibility → Decision → Result → Learning. Then stop.
 
 **Story in your pocket for each ask**  
-Authority: Goldman quants. Conflict: onboarding memo. Mentoring: design bar. Architecture: payout invariants. Ambiguity: “settled.” Failure: webhooks. AI: human gate on the timeout path.
+Authority: Skydo production-readiness review. Conflict: onboarding memo. Mentoring: design bar. Architecture: payout invariants. Ambiguity: “settled.” Failure: webhooks. AI: human gate on the timeout path.
 
 **Culture, if the question is soft**  
 Pick collaboration (shared states) or accountability (the webhook miss). One story. Do not list values.
