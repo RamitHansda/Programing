@@ -1,11 +1,14 @@
-# Abhineet Mishra — Toast HM/Tech Screen Prep
-**Round:** Virtual Tech Screen / HM Screen (45 min)  
+# Abhineet Mishra — Toast EM Screen Prep
+**Role:** Engineering Manager — Payments / Funds Management  
+**Round:** Virtual HM/Tech Screen (45 min)  
 **Interviewer:** Abhineet Mishra, Senior Manager, Software Engineering  
 **Team:** Funds Management · Payments · Toast Bengaluru  
 **Candidate:** Ramit Hansda  
 **When:** Tuesday, 29 Sep 2026 · 10:00–10:45 IST  
 
-Companion: `TOAST_ABHINEET_HM_TECH_SCREEN_DAYOF_CHEATSHEET.md`
+Companions:
+- `TOAST_ABHINEET_HM_TECH_SCREEN_DAYOF_CHEATSHEET.md` (skim card)
+- `TOAST_ABHINEET_INTERVIEW_SCRIPT.md` (**EM spoken answers** — use this)
 
 ---
 
@@ -20,15 +23,17 @@ Companion: `TOAST_ABHINEET_HM_TECH_SCREEN_DAYOF_CHEATSHEET.md`
   - Scaled eng team **2 → 12**; operational excellence (−25% high-sev defects / time-to-launch)
 - Public hiring signal: Staff/Principal + EM roles for building **high-throughput payment systems**, **fault-tolerant transaction pipelines**, **ultra-low latency settlement frameworks** — Java/Kotlin, microservices, payments/FinTech
 
-### What this means for the interview
-Abhineet is not a generic "restaurant POS" interviewer. He is a **payments/finance-platform** hiring manager who came from Amazon money-movement systems. He will evaluate you the way an Amazon SDM + Toast Payments SEM would:
+### What this means for the interview (EM role)
+Abhineet posted for an **Engineering Manager – Payments** in Bengaluru: high-performing teams + large-scale payments. He is your hiring manager (SEM). He will evaluate you as an Amazon-flavored **technical EM**:
 
-1. **Can you own a money path end-to-end?** (correctness > cleverness)
-2. **Do you reason about failure modes** (timeouts, duplicate payouts, partial settlement, fee mismatches)?
-3. **Do you raise the bar** (standards, mentorship, ops excellence, measurable impact)?
-4. **Will you fit Funds Management** — merchant funds *out*, netting, withholdings, recon — not just guest checkout UX?
+1. **Can you lead a payments team?** Hire, grow Senior→Staff, handle underperformance, structure ownership
+2. **Can you still dive deep on money paths?** Settlement, payouts, idempotency, failure modes — not status-only
+3. **Do you deliver with product/ops?** Roadmap tradeoffs, merchant trust as outcome, ops excellence
+4. **Will you raise the bar?** Standards, ADRs, business SLOs, blameless incidents with teeth
 
-Calibrate depth to **settlement / ledger / recon / idempotency**. POS offline sync is secondary unless he asks.
+**Win condition:** "I'd trust this EM with Funds Management — technical enough to catch double-pay designs, strong enough to build the team."
+
+Calibrate: **~50% leadership/delivery, ~50% payments depth**. Not pure IC Staff pitch.
 
 ---
 
@@ -166,10 +171,13 @@ Bridge to Toast: "That's exactly what a restaurant owner is doing when deposit �
 
 ---
 
-### Q6: "Senior vs Staff — how do you operate?"
+### Q6: "What are you looking for? / Why EM?"
 
-For Staff bar (his hiring posts target Staff/Principal):
-> Senior ships complex features well. Staff defines the **contracts, failure modes, and reusable substrate** so multiple teams ship correctly — payout idempotency library, recon matching rules as data, settlement job framework, SLOs that pages on stuck money. I did that at Skydo with platform vs product tracks and ADRs on load-bearing decisions.
+> EM seat owning payments/funds: hire & grow a high-bar team, stay deep on settlement correctness, partner so merchant deposit trust is the product outcome. Choosing EM (not pure Staff IC) for leverage through people + standards while still diving deep — same intersection as your EM hiring post.
+
+### Q6b: "How do you grow Senior → Staff?"
+
+> Give them a production invariant to own (idempotency lib, recon engine); measure adoption; put them in cross-team design reviews. Context-over-answers in design review.
 
 ---
 
@@ -234,13 +242,13 @@ Separate journals so reporting can explain "why was my deposit less than sales?"
 
 ---
 
-## 8. Questions to ask him (pick 3)
+## 8. Questions to ask him (pick 3) — EM
 
-1. Hardest Funds Management problem next 6–12 months — payout latency, multi-product withholdings, recon, Capital/instant deposit scale?
-2. Bengaluru vs US ownership on payments / processor integrations?
-3. Staff success on your team: platform substrate vs feature velocity?
-4. What does great ops excellence look like here (payout MTTR, exception SLAs)?
-5. How do you grow Staff engineers toward Principal on this stack?
+1. What does great look like for an EM on Funds Management in 6 months?
+2. What would my team own vs sibling teams? How should EMs partner with you?
+3. Hardest people/delivery challenge now (hiring, Senior depth, US timezone, ops load)?
+4. How do you weigh roadmap speed vs money-path correctness under product pressure?
+5. What separates a strong EM from a no-hire on this Payments org?
 
 ---
 
@@ -265,7 +273,8 @@ Don't pretend you've operated Pulsar in prod — say "same event-driven contract
 | 10-minute POS dinner-rush story | 5-minute settlement correctness story |
 | "We guarantee exactly-once" | At-least-once + idempotent consumers + recon |
 | Fake Toast Capital underwriting expertise | Honest: "I'd want to learn underwriting; I know payout withholdings as a funds-flow problem" |
-| Only people-manager talk | Show hands-on depth — he is hiring builders for Staff+ |
+| Pure people-manager with no settlement depth | Technical EM: leadership + money-path judgment |
+| Staff-IC-only pitch ("I want hands-on only") | EM leverage through team; still dive deep |
 | Algorithm puzzle flex | Practical money-path reasoning |
 
 ---
