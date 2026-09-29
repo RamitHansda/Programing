@@ -119,7 +119,7 @@ Use Context → Responsibility → Decision → Result → Learning. Ninety seco
 
 | If he asks | Story | Learning line |
 |---|---|---|
-| Influence without authority | Goldman quants and regional owners (§5.1) | Irreversible compute changes waited on a written contract the downstream owner had seen |
+| Influence without authority | Skydo production-readiness review (§5.1) | Two teams that do not report to me run the checklist without me |
 | Conflict | Onboarding versus compliance (§5.2) | One memo: beta for a whitelisted cohort, full rollout after the audit trail |
 | Mentoring seniors | Design-doc bar, eight engineers (§5.3) | Coverage of major reviews went from about 30% to essentially all of them, without every review coming to me |
 | A hard technical call | Payout invariants and the recon ladder (§5.4) | Unknown is a state. Local transactions roll back. External money is compensated |
@@ -128,7 +128,7 @@ Use Context → Responsibility → Decision → Result → Learning. Ninety seco
 | How you use AI | Human gate on model diffs (§6) | I read the timeout and the retry myself. The merge is mine |
 | Stakeholders / writing | Recon one-pager or the onboarding memo | I would rather one meeting with a written trade-off than a week of Slack |
 
-Have failure (webhooks) and influence (Goldman or the compliance memo) ready even if he does not name them. Hiring managers often end on “tell me about a miss” and “tell me about a time you needed someone you don’t manage.”
+Have failure (webhooks) and influence (the readiness review, or the compliance memo if he wants a non-engineering audience) ready even if he does not name them. Hiring managers often end on “tell me about a miss” and “tell me about a time you needed someone you don’t manage.”
 
 Culture, if the question is soft: one story. Collaboration is the shared settlement vocabulary. Accountability is the webhook miss. Humility is saying the miss was an under-scoped failure model, not a flaky partner.
 
@@ -172,7 +172,7 @@ Closing line:
 
 **Payout invariants if he switches:** legal transitions only; intent + key + outbox before the call; rollback locally, compensate after; at most one movement; unknown is owned.
 
-**Stories:** influence = Goldman. Conflict = onboarding memo. Mentor = design bar. Failure = webhooks. AI = I still read the timeout path.
+**Stories:** influence = production-readiness review, two teams I don’t manage. Conflict = onboarding memo. Mentor = design bar. Failure = webhooks. AI = I still read the timeout path.
 
 **Shape:** Context → Responsibility → Decision → Result → Learning. Then stop.
 
