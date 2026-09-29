@@ -2,6 +2,8 @@
 **Abhineet Mishra · Sr Manager, SWE · Funds Management (Payments) · Bengaluru**  
 **Tue 29 Sep 2026 · 10:00–10:45 IST · Virtual · 45 min**
 
+**Full spoken answers:** `TOAST_ABHINEET_INTERVIEW_SCRIPT.md` (rehearse out loud)
+
 ---
 
 ## 90-sec open (say this)
