@@ -1,5 +1,7 @@
 # Orchestrator Types — Staff Engineer Decision Guide
 
+Org-wide standard, owners, and exit criteria: [`ORCHESTRATOR_TYPES_PRINCIPAL_ENGINEER.md`](./ORCHESTRATOR_TYPES_PRINCIPAL_ENGINEER.md).
+
 ---
 
 ## Overview
