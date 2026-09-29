@@ -1,6 +1,8 @@
 # Leadership Discussion Prep — Staff Signal Follow-up
 
 **Candidate:** Ramit Hansda  
+**This conversation:** Hiring manager round with **Ritesh Sinha**, Tue Sep 30, 2026, 6:30–7:30pm IST, video. Day-of script, clock, and questions for him: [`docs/interviews/TURING-RITESH-SINHA-HM-PREP.md`](../interviews/TURING-RITESH-SINHA-HM-PREP.md). Use this file for the design spine and the six stories. Use that file to run the hour.
+
 **Where you stand:** The prior round already credited technical reasoning, systems thinking, concurrency, testing discipline, and architectural judgment. Treat that as banked. This conversation is where you show you can **name the invariant, lead the decision, and carry it across people who do not report to you.**
 
 **How to use this doc**
