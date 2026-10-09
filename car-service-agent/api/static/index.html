@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ServiceLane — Car Service AI Agent</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <div class="atmosphere" aria-hidden="true"></div>
+  <div class="grid-glow" aria-hidden="true"></div>
+
+  <header class="topbar">
+    <div class="brand-lockup">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <div>
+        <p class="brand">ServiceLane</p>
+        <p class="brand-sub">Car Service AI Agent</p>
+      </div>
+    </div>
+    <button type="button" class="ghost-btn" id="resetBtn">New chat</button>
+  </header>
+
+  <main class="stage">
+    <section class="hero" id="hero">
+      <p class="brand-hero">ServiceLane</p>
+      <h1>Your car. Serviced end to end.</h1>
+      <p class="lede">
+        Tell me who you are — I’ll recommend the right package, find a workshop slot,
+        and book it without the phone-tree runaround.
+      </p>
+      <div class="cta-row">
+        <button type="button" class="primary-btn" data-prompt="I am Ananya Sharma">Start as Ananya</button>
+        <button type="button" class="secondary-btn" data-prompt="What can you do?">See what I can do</button>
+      </div>
+    </section>
+
+    <section class="chat-shell" aria-label="ServiceLane chat">
+      <div class="chat-log" id="chatLog" role="log" aria-live="polite"></div>
+      <div class="suggestions" id="suggestions"></div>
+      <form class="composer" id="chatForm">
+        <input
+          id="messageInput"
+          type="text"
+          autocomplete="off"
+          placeholder="Book a service, check status, describe a symptom…"
+          required
+        />
+        <button type="submit" class="send-btn" aria-label="Send">Send</button>
+      </form>
+      <p class="trace-toggle-row">
+        <button type="button" class="linkish" id="traceToggle">Show tool trace</button>
+      </p>
+      <pre class="tool-trace hidden" id="toolTrace"></pre>
+    </section>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
