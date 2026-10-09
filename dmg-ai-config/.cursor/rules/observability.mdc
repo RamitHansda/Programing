@@ -1,0 +1,12 @@
+---
+description: Observability defaults for critical-path services
+globs:
+  - "**/*.{kt,java,go,ts,py}"
+---
+
+# Observability
+
+- Every request/event handler logs a correlation id (or disruption id) already present in context; never invent a disconnected id.
+- New error paths must be explicit: log + metric + non-success signal to the caller when appropriate.
+- Do not log payloads that may contain PII; log identifiers and reason codes instead.
+- If you change behavior on the Zero Touch path, update or add a metric the on-call can chart.
