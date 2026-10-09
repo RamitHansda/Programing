@@ -1,0 +1,142 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/schemas/data-profiler/profile.schema.json",
+  "title": "DataProfilerProfile",
+  "description": "Portable profile document for comparing table/column metadata across engines.",
+  "type": "object",
+  "required": ["schema_version", "run", "tables"],
+  "properties": {
+    "schema_version": { "type": "string", "const": "1.0.0" },
+    "run": {
+      "type": "object",
+      "required": ["run_id", "engine", "started_at", "finished_at", "config"],
+      "properties": {
+        "run_id": { "type": "string" },
+        "engine": {
+          "type": "string",
+          "enum": ["sqlite", "duckdb", "snowflake", "databricks"]
+        },
+        "database": { "type": ["string", "null"] },
+        "started_at": { "type": "string", "format": "date-time" },
+        "finished_at": { "type": "string", "format": "date-time" },
+        "status": {
+          "type": "string",
+          "enum": ["completed", "partial", "failed"]
+        },
+        "config": { "type": "object" },
+        "metrics": {
+          "type": "object",
+          "properties": {
+            "tables_total": { "type": "integer" },
+            "tables_profiled": { "type": "integer" },
+            "tables_failed": { "type": "integer" },
+            "elapsed_seconds": { "type": "number" }
+          }
+        }
+      }
+    },
+    "tables": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/table_profile" }
+    }
+  },
+  "$defs": {
+    "portable_type": {
+      "type": "object",
+      "required": ["kind", "native"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "integer",
+            "float",
+            "decimal",
+            "boolean",
+            "string",
+            "binary",
+            "date",
+            "time",
+            "timestamp",
+            "json",
+            "array",
+            "map",
+            "struct",
+            "unknown"
+          ]
+        },
+        "native": { "type": "string", "description": "Engine-native type string" },
+        "nullable": { "type": ["boolean", "null"] },
+        "precision": { "type": ["integer", "null"] },
+        "scale": { "type": ["integer", "null"] },
+        "max_length": { "type": ["integer", "null"] }
+      }
+    },
+    "column_profile": {
+      "type": "object",
+      "required": ["name", "type"],
+      "properties": {
+        "name": { "type": "string" },
+        "type": { "$ref": "#/$defs/portable_type" },
+        "comment": { "type": ["string", "null"] },
+        "ordinal_position": { "type": ["integer", "null"] },
+        "stats": {
+          "type": "object",
+          "properties": {
+            "min": {},
+            "max": {},
+            "null_count": { "type": ["integer", "null"] },
+            "null_ratio": { "type": ["number", "null"] },
+            "distinct_count": { "type": ["integer", "null"] },
+            "distinct_count_is_estimate": { "type": "boolean" },
+            "distinct_from_sample": {
+              "type": "boolean",
+              "description": "True when cardinality was measured on a sample, making it a lower bound rather than an estimate of the table."
+            },
+            "min_max_from_sample": {
+              "type": "boolean",
+              "description": "True when min/max come from a sample and therefore understate the true range."
+            },
+            "sampled_rows": { "type": ["integer", "null"] },
+            "histogram": {
+              "type": ["object", "null"],
+              "properties": {
+                "buckets": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": ["label", "count"],
+                    "properties": {
+                      "label": { "type": "string" },
+                      "count": { "type": "integer" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "table_profile": {
+      "type": "object",
+      "required": ["catalog", "schema", "name", "row_count", "columns"],
+      "properties": {
+        "catalog": { "type": ["string", "null"] },
+        "schema": { "type": ["string", "null"] },
+        "name": { "type": "string" },
+        "fully_qualified_name": { "type": "string" },
+        "row_count": { "type": ["integer", "null"] },
+        "row_count_is_estimate": { "type": "boolean" },
+        "comment": { "type": ["string", "null"] },
+        "sampled": { "type": "boolean" },
+        "sample_size": { "type": ["integer", "null"] },
+        "columns": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/column_profile" }
+        },
+        "error": { "type": ["string", "null"] },
+        "duration_ms": { "type": ["number", "null"] }
+      }
+    }
+  }
+}
