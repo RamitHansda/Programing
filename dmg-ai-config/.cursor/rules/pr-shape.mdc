@@ -1,0 +1,12 @@
+---
+description: Zero Touch PR size and reviewability
+globs:
+  - "**/*"
+---
+
+# PR shape
+
+- Prefer PRs that prove one invariant or deliver one vertical slice.
+- If a diff exceeds ~400 net lines of logic (excluding generated), split before review.
+- PR description must include: intent, risk, test plan, rollback/flag.
+- Do not mix refactors with behavior changes on critical-path packages.
