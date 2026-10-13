@@ -25,6 +25,8 @@ Rishika is likely TA/process; Subrata is the signal. Talk to **him** as Director
 
 Confirm remaining loop with Rishika after (typical lateral: more tech/design + people + HR). Don’t invent stages.
 
+**Next known round:** Stakeholder with **Chetan Sharma** (Head, Strategic Partnerships) — prep in [`MONEYVIEW-EM-STAKEHOLDER-CHETAN-PREP.md`](./MONEYVIEW-EM-STAKEHOLDER-CHETAN-PREP.md).
+
 ---
 
 ## 2. Interviewer lens — Subrata Parial
